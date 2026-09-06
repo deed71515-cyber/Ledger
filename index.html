@@ -58,10 +58,9 @@
   }
 </script>
 
-<script type="text/plain" id="app-source">
-const { useState, useEffect, useCallback } = React;
+<script type="text/plain" id="app-source">const { useState, useEffect, useCallback, useRef } = React;
 
-const STORAGE_KEY = 'ledger-state-v1';
+const STORAGE_KEY = 'ledger-state-v2';
 
 const PAPER = '#F6F3EC';
 const INK = '#1C2B22';
@@ -70,6 +69,7 @@ const CARD = '#FFFFFF';
 const BORDER = '#E4DFD1';
 const BRICK = '#A8483A';
 const GOLD = '#B98A2E';
+const FOREST = '#2F6F5E';
 
 const SERIF = "'Fraunces', Georgia, serif";
 const SANS = "'IBM Plex Sans', system-ui, sans-serif";
@@ -82,19 +82,54 @@ const DEFAULT_CATEGORIES = [
   { id: 'longterm', name: 'Long-Term Wealth', pct: 15, color: '#3E5C76' },
 ];
 
-function monthKey(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
+function monthKey(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function monthLabel(key) {
   const [y, m] = key.split('-').map(Number);
-  const d = new Date(y, m - 1, 1);
-  return d.toLocaleString('en', { month: 'long', year: 'numeric' });
+  return new Date(y, m - 1, 1).toLocaleString('en', { month: 'long', year: 'numeric' });
 }
-
 function formatGHS(n) {
   const sign = n < 0 ? '-' : '';
   return `${sign}GHC ${Math.abs(Math.round(n)).toLocaleString('en')}`;
+}
+
+// ---- simple inline icon set (no external icon library needed) ----
+function IconHome({ color }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9.5L10 3l7 6.5" /><path d="M5 8.5V17h4v-5h2v5h4V8.5" />
+    </svg>
+  );
+}
+function IconBudget({ color }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round">
+      <line x1="3" y1="6" x2="17" y2="6" /><circle cx="11" cy="6" r="1.8" fill={color} stroke="none" />
+      <line x1="3" y1="10" x2="17" y2="10" /><circle cx="7" cy="10" r="1.8" fill={color} stroke="none" />
+      <line x1="3" y1="14" x2="17" y2="14" /><circle cx="13" cy="14" r="1.8" fill={color} stroke="none" />
+    </svg>
+  );
+}
+function IconHistory({ color }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="10" cy="10" r="7" /><path d="M10 6.5v3.8l2.6 1.5" />
+    </svg>
+  );
+}
+function IconSettings({ color }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round">
+      <circle cx="10" cy="10" r="2.6" />
+      <path d="M10 2.6v2M10 15.4v2M17.4 10h-2M4.6 10h-2M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4M15.2 15.2l-1.4-1.4M6.2 6.2L4.8 4.8" />
+    </svg>
+  );
+}
+function IconPlus({ color }) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+      <line x1="10" y1="4" x2="10" y2="16" /><line x1="4" y1="10" x2="16" y2="10" />
+    </svg>
+  );
 }
 
 function Ledger() {
@@ -104,9 +139,15 @@ function Ledger() {
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [months, setMonths] = useState({});
   const [activeMonth, setActiveMonth] = useState(monthKey(new Date()));
+  const [activeTab, setActiveTab] = useState('home');
   const [openForm, setOpenForm] = useState(null);
   const [formAmount, setFormAmount] = useState('');
   const [formNote, setFormNote] = useState('');
+  const [formCategoryId, setFormCategoryId] = useState(null);
+  const [editingNameId, setEditingNameId] = useState(null);
+  const [nameDraft, setNameDraft] = useState('');
+  const [restoreMsg, setRestoreMsg] = useState('');
+  const importInputRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -117,9 +158,18 @@ function Ledger() {
           if (parsed.income) setIncome(parsed.income);
           if (parsed.categories) setCategories(parsed.categories);
           if (parsed.months) setMonths(parsed.months);
+        } else {
+          // one-time migration from the old single-page version's key, if present
+          const old = await window.storage.get('ledger-state-v1', false).catch(() => null);
+          if (old && old.value) {
+            const parsed = JSON.parse(old.value);
+            if (parsed.income) setIncome(parsed.income);
+            if (parsed.categories) setCategories(parsed.categories);
+            if (parsed.months) setMonths(parsed.months);
+          }
         }
       } catch (e) {
-        // no saved ledger yet, start fresh
+        // fresh start
       } finally {
         setLoading(false);
       }
@@ -152,6 +202,15 @@ function Ledger() {
     persist(income, next, months);
   }
 
+  function startRename(c) { setEditingNameId(c.id); setNameDraft(c.name); }
+  function commitRename(id) {
+    const trimmed = nameDraft.trim();
+    const next = categories.map((c) => (c.id === id ? { ...c, name: trimmed || c.name } : c));
+    setCategories(next);
+    persist(income, next, months);
+    setEditingNameId(null);
+  }
+
   function ensureMonth(key, monthsObj) {
     if (monthsObj[key]) return monthsObj;
     return { ...monthsObj, [key]: { transactions: [] } };
@@ -163,64 +222,78 @@ function Ledger() {
     const withMonth = ensureMonth(activeMonth, months);
     const tx = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      categoryId,
-      amount: amt,
-      note: formNote.trim(),
-      date: new Date().toISOString(),
+      categoryId, amount: amt, note: formNote.trim(), date: new Date().toISOString(),
     };
-    const nextMonths = {
-      ...withMonth,
-      [activeMonth]: { transactions: [tx, ...withMonth[activeMonth].transactions] },
-    };
+    const nextMonths = { ...withMonth, [activeMonth]: { transactions: [tx, ...withMonth[activeMonth].transactions] } };
     setMonths(nextMonths);
     persist(income, categories, nextMonths);
-    setFormAmount('');
-    setFormNote('');
-    setOpenForm(null);
+    setFormAmount(''); setFormNote(''); setOpenForm(null); setFormCategoryId(null);
   }
 
   function deleteTransaction(txId) {
     const list = months[activeMonth]?.transactions || [];
-    const nextMonths = {
-      ...months,
-      [activeMonth]: { transactions: list.filter((t) => t.id !== txId) },
-    };
+    const nextMonths = { ...months, [activeMonth]: { transactions: list.filter((t) => t.id !== txId) } };
     setMonths(nextMonths);
     persist(income, categories, nextMonths);
   }
 
   async function handleReset() {
     if (!window.confirm('Clear all saved ledger data? This cannot be undone.')) return;
-    setIncome(3500);
-    setCategories(DEFAULT_CATEGORIES);
-    setMonths({});
-    setActiveMonth(monthKey(new Date()));
-    try {
-      await window.storage.delete(STORAGE_KEY, false);
-    } catch (e) {}
+    setIncome(3500); setCategories(DEFAULT_CATEGORIES); setMonths({}); setActiveMonth(monthKey(new Date()));
+    try { await window.storage.delete(STORAGE_KEY, false); } catch (e) {}
   }
 
   function handleExportCSV() {
     const rows = [['Month', 'Date', 'Category', 'Amount (GHC)', 'Note']];
     Object.keys(months).sort().forEach((mKey) => {
-      const txs = months[mKey]?.transactions || [];
-      txs.slice().reverse().forEach((t) => {
+      (months[mKey]?.transactions || []).slice().reverse().forEach((t) => {
         const cat = categories.find((c) => c.id === t.categoryId);
         const dateStr = new Date(t.date).toLocaleDateString('en-GB');
         const noteEscaped = (t.note || '').replace(/"/g, '""');
         rows.push([mKey, dateStr, cat?.name || 'Unknown', t.amount, `"${noteEscaped}"`]);
       });
     });
-    const csvContent = rows.map((r) => r.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    downloadBlob(rows.map((r) => r.join(',')).join('\n'), 'text/csv;charset=utf-8;', `ledger-export-${monthKey(new Date())}.csv`);
+  }
+
+  function handleExportBackup() {
+    const payload = JSON.stringify({ income, categories, months, exportedAt: new Date().toISOString() }, null, 2);
+    downloadBlob(payload, 'application/json', `ledger-backup-${monthKey(new Date())}.json`);
+  }
+
+  function downloadBlob(content, type, filename) {
+    const blob = new Blob([content], { type });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `ledger-export-${monthKey(new Date())}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  function handleImportClick() { importInputRef.current?.click(); }
+
+  function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        if (typeof parsed.income !== 'number' || !Array.isArray(parsed.categories) || typeof parsed.months !== 'object') {
+          throw new Error('shape');
+        }
+        setIncome(parsed.income);
+        setCategories(parsed.categories);
+        setMonths(parsed.months);
+        persist(parsed.income, parsed.categories, parsed.months);
+        setRestoreMsg('Backup restored successfully.');
+      } catch (err) {
+        setRestoreMsg("That file doesn't look like a valid ledger backup.");
+      }
+      setTimeout(() => setRestoreMsg(''), 4000);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   }
 
   const currentTx = months[activeMonth]?.transactions || [];
@@ -229,12 +302,8 @@ function Ledger() {
   const totalPlanned = income * (Math.min(totalAllocatedPct, 100) / 100);
   const unallocatedAmount = income - totalPlanned;
   const totalSpent = currentTx.reduce((s, t) => s + t.amount, 0);
-
-  const availableMonths = Array.from(
-    new Set([...Object.keys(months), monthKey(new Date())])
-  ).sort();
+  const availableMonths = Array.from(new Set([...Object.keys(months), monthKey(new Date())])).sort();
   const monthIdx = availableMonths.indexOf(activeMonth);
-
   function goMonth(delta) {
     const idx = monthIdx + delta;
     if (idx >= 0 && idx < availableMonths.length) setActiveMonth(availableMonths[idx]);
@@ -242,165 +311,263 @@ function Ledger() {
 
   if (loading) {
     return (
-      <div style={{ background: PAPER, minHeight: '100vh', fontFamily: SANS }} className="flex items-center justify-center p-12">
+      <div style={{ background: PAPER, minHeight: '100vh', fontFamily: SANS, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <p style={{ color: MUTED }}>Opening the ledger…</p>
       </div>
     );
   }
 
+  const pageStyle = { maxWidth: 640, margin: '0 auto', padding: '24px 20px 100px' };
+  const pageTitleStyle = { fontFamily: SERIF, fontSize: '1.5rem', fontWeight: 600, margin: '0 0 20px' };
+
   return (
-    <div style={{ background: PAPER, fontFamily: SANS, color: INK, width: '100%', boxSizing: 'border-box', minHeight: '100vh' }}>
-      <div style={{ maxWidth: 640, margin: '0 auto', padding: '32px 20px' }}>
+    <div style={{ background: PAPER, fontFamily: SANS, color: INK, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflowY: 'auto' }}>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 32 }}
-             className="header-row">
-          <div>
-            <h1 style={{ fontFamily: SERIF, fontSize: '1.75rem', fontWeight: 600, margin: 0 }}>Your Ledger</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
-              <button onClick={() => goMonth(-1)} disabled={monthIdx <= 0}
-                style={{ color: monthIdx <= 0 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx <= 0 ? 'default' : 'pointer', fontSize: '1rem' }}>‹</button>
-              <span style={{ color: MUTED, fontSize: '0.9rem' }}>{monthLabel(activeMonth)}</span>
-              <button onClick={() => goMonth(1)} disabled={monthIdx >= availableMonths.length - 1}
-                style={{ color: monthIdx >= availableMonths.length - 1 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx >= availableMonths.length - 1 ? 'default' : 'pointer', fontSize: '1rem' }}>›</button>
-            </div>
-          </div>
-          <div>
-            <label style={{ color: MUTED, fontSize: '0.8rem' }}>Monthly income</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
-              <span style={{ fontFamily: SERIF }}>GHC</span>
-              <input type="number" value={income} onChange={(e) => handleIncomeChange(e.target.value)}
-                className="ledger-input"
-                style={{ fontFamily: SERIF, fontSize: '1.1rem', width: 110, background: 'transparent', border: `1px solid ${BORDER}`, borderRadius: 6, padding: '4px 8px', color: INK }} />
-            </div>
-          </div>
-        </div>
-
-        <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 24, marginBottom: 32 }}>
-          <p style={{ color: MUTED, fontSize: '0.85rem', margin: '0 0 4px' }}>Still unaccounted for this month</p>
-          <p style={{ fontFamily: SERIF, fontSize: '2.5rem', fontWeight: 500, lineHeight: 1.1, color: unallocatedAmount < 0 ? BRICK : INK, margin: 0 }}>
-            {formatGHS(unallocatedAmount)}
-          </p>
-          <div style={{ display: 'flex', gap: 32, marginTop: 20, paddingTop: 20, borderTop: `1px solid ${BORDER}` }}>
-            <div>
-              <p style={{ color: MUTED, fontSize: '0.8rem', margin: 0 }}>Planned</p>
-              <p style={{ fontFamily: SERIF, fontSize: '1.25rem', margin: 0 }}>{formatGHS(totalPlanned)}</p>
-            </div>
-            <div>
-              <p style={{ color: MUTED, fontSize: '0.8rem', margin: 0 }}>Spent so far</p>
-              <p style={{ fontFamily: SERIF, fontSize: '1.25rem', margin: 0 }}>{formatGHS(totalSpent)}</p>
-            </div>
-          </div>
-          {overAllocated && (
-            <p style={{ color: BRICK, fontSize: '0.85rem', marginTop: 16, marginBottom: 0 }}>
-              Your categories add up to {totalAllocatedPct}% — that's over 100%. Adjust a slider below.
-            </p>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 32 }}>
-          {categories.map((c) => {
-            const planned = income * (c.pct / 100);
-            const spent = currentTx.filter((t) => t.categoryId === c.id).reduce((s, t) => s + t.amount, 0);
-            const remaining = planned - spent;
-            const usedPct = planned > 0 ? Math.min(100, (spent / planned) * 100) : 0;
-            const isOver = spent > planned;
-            const isOpen = openForm === c.id;
-
-            return (
-              <div key={c.id} style={{ background: CARD, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${c.color}`, borderRadius: 8, padding: 18 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{c.name}</span>
-                  <span style={{ color: MUTED, fontSize: '0.85rem' }}>{c.pct}%</span>
-                </div>
-                <input type="range" min="0" max="40" value={c.pct} onChange={(e) => handlePctChange(c.id, e.target.value)}
-                  className="ledger-slider"
-                  style={{ accentColor: c.color, background: `linear-gradient(to right, ${c.color} ${(c.pct/40)*100}%, ${BORDER} ${(c.pct/40)*100}%)` }} />
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: '0.8rem' }}>
-                  <span style={{ color: MUTED }}>Planned {formatGHS(planned)}</span>
-                  <span style={{ color: isOver ? BRICK : MUTED }}>
-                    {isOver ? `Over by ${formatGHS(spent - planned)}` : `${formatGHS(remaining)} left`}
-                  </span>
-                </div>
-
-                <div style={{ background: BORDER, borderRadius: 4, height: 6, overflow: 'hidden', marginTop: 8 }}>
-                  <div style={{ width: `${usedPct}%`, background: isOver ? BRICK : c.color, height: '100%', transition: 'width 300ms ease' }} />
-                </div>
-
-                <div style={{ marginTop: 12 }}>
-                  {!isOpen ? (
-                    <button onClick={() => { setOpenForm(c.id); setFormAmount(''); setFormNote(''); }}
-                      style={{ color: c.color, background: 'none', border: 'none', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 500, padding: 0 }}>
-                      + Add entry
-                    </button>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                      <input type="number" placeholder="Amount" value={formAmount}
-                        onChange={(e) => setFormAmount(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(c.id); } }}
-                        className="ledger-input" autoFocus
-                        style={{ border: `1px solid ${BORDER}`, borderRadius: 6, padding: '8px', fontSize: '0.85rem', width: '100%' }} />
-                      <input type="text" placeholder="Note (optional)" value={formNote}
-                        onChange={(e) => setFormNote(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(c.id); } }}
-                        className="ledger-input"
-                        style={{ border: `1px solid ${BORDER}`, borderRadius: 6, padding: '8px', fontSize: '0.85rem', width: '100%' }} />
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => addTransaction(c.id)}
-                          style={{ background: c.color, color: '#FFF', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer' }}>Save</button>
-                        <button onClick={() => setOpenForm(null)}
-                          style={{ background: 'none', color: MUTED, border: 'none', fontSize: '0.85rem', cursor: 'pointer' }}>Cancel</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+        {activeTab === 'home' && (
+          <div style={pageStyle}>
+            <h1 style={pageTitleStyle}>Your Ledger</h1>
+            <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 24, marginBottom: 20 }}>
+              <p style={{ color: MUTED, fontSize: '0.85rem', margin: '0 0 4px' }}>Still unaccounted for this month</p>
+              <p style={{ fontFamily: SERIF, fontSize: '2.5rem', fontWeight: 500, lineHeight: 1.1, color: unallocatedAmount < 0 ? BRICK : INK, margin: 0 }}>
+                {formatGHS(unallocatedAmount)}
+              </p>
+              <div style={{ display: 'flex', gap: 32, marginTop: 20, paddingTop: 20, borderTop: `1px solid ${BORDER}` }}>
+                <div><p style={{ color: MUTED, fontSize: '0.8rem', margin: 0 }}>Planned</p><p style={{ fontFamily: SERIF, fontSize: '1.25rem', margin: 0 }}>{formatGHS(totalPlanned)}</p></div>
+                <div><p style={{ color: MUTED, fontSize: '0.8rem', margin: 0 }}>Spent so far</p><p style={{ fontFamily: SERIF, fontSize: '1.25rem', margin: 0 }}>{formatGHS(totalSpent)}</p></div>
               </div>
-            );
-          })}
-        </div>
+              {overAllocated && <p style={{ color: BRICK, fontSize: '0.85rem', marginTop: 16, marginBottom: 0 }}>Your categories add up to {totalAllocatedPct}% — over 100%. Adjust in Budget.</p>}
+            </div>
 
-        <div style={{ marginBottom: 32 }}>
-          <h2 style={{ fontFamily: SERIF, fontSize: '1.1rem', fontWeight: 600, marginBottom: 12 }}>Entries this month</h2>
-          {currentTx.length === 0 ? (
-            <p style={{ color: MUTED, fontSize: '0.85rem' }}>No entries yet. Add one from a category above.</p>
-          ) : (
-            <div style={{ border: `1px solid ${BORDER}`, borderRadius: 8, background: CARD }}>
-              {currentTx.map((t, i) => {
-                const cat = categories.find((c) => c.id === t.categoryId);
-                return (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderTop: i === 0 ? 'none' : `1px solid ${BORDER}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: cat?.color || MUTED, flexShrink: 0 }} />
-                      <div style={{ minWidth: 0 }}>
-                        <p style={{ fontSize: '0.85rem', margin: 0 }}>{cat?.name || 'Unknown'}</p>
-                        {t.note && <p style={{ color: MUTED, fontSize: '0.75rem', margin: 0 }}>{t.note}</p>}
+            <h2 style={{ fontFamily: SERIF, fontSize: '1rem', fontWeight: 600, marginBottom: 10 }}>Recent entries</h2>
+            {currentTx.length === 0 ? (
+              <p style={{ color: MUTED, fontSize: '0.85rem' }}>No entries yet. Tap the + button to log one.</p>
+            ) : (
+              <div style={{ border: `1px solid ${BORDER}`, borderRadius: 8, background: CARD }}>
+                {currentTx.slice(0, 5).map((t, i) => {
+                  const cat = categories.find((c) => c.id === t.categoryId);
+                  return (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderTop: i === 0 ? 'none' : `1px solid ${BORDER}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: cat?.color || MUTED, flexShrink: 0 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontSize: '0.85rem', margin: 0 }}>{cat?.name || 'Unknown'}</p>
+                          {t.note && <p style={{ color: MUTED, fontSize: '0.75rem', margin: 0 }}>{t.note}</p>}
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
                       <span style={{ fontFamily: SERIF, fontSize: '0.9rem' }}>{formatGHS(t.amount)}</span>
-                      <button onClick={() => deleteTransaction(t.id)}
-                        style={{ color: MUTED, background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem' }}>×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'budget' && (
+          <div style={pageStyle}>
+            <h1 style={pageTitleStyle}>Budget</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+              <button onClick={() => goMonth(-1)} disabled={monthIdx <= 0} style={{ color: monthIdx <= 0 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx <= 0 ? 'default' : 'pointer', fontSize: '1rem' }}>‹</button>
+              <span style={{ color: MUTED, fontSize: '0.9rem' }}>{monthLabel(activeMonth)}</span>
+              <button onClick={() => goMonth(1)} disabled={monthIdx >= availableMonths.length - 1} style={{ color: monthIdx >= availableMonths.length - 1 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx >= availableMonths.length - 1 ? 'default' : 'pointer', fontSize: '1rem' }}>›</button>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ color: MUTED, fontSize: '0.8rem' }}>Monthly income</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                <span style={{ fontFamily: SERIF }}>GHC</span>
+                <input type="number" value={income} onChange={(e) => handleIncomeChange(e.target.value)}
+                  style={{ fontFamily: SERIF, fontSize: '1.1rem', width: 120, background: 'transparent', border: `1px solid ${BORDER}`, borderRadius: 6, padding: '6px 8px', color: INK }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {categories.map((c) => {
+                const planned = income * (c.pct / 100);
+                const spent = currentTx.filter((t) => t.categoryId === c.id).reduce((s, t) => s + t.amount, 0);
+                const remaining = planned - spent;
+                const usedPct = planned > 0 ? Math.min(100, (spent / planned) * 100) : 0;
+                const isOver = spent > planned;
+                const isOpen = openForm === c.id;
+                const isEditingName = editingNameId === c.id;
+
+                return (
+                  <div key={c.id} style={{ background: CARD, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${c.color}`, borderRadius: 8, padding: 18 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, alignItems: 'center' }}>
+                      {isEditingName ? (
+                        <input autoFocus value={nameDraft} onChange={(e) => setNameDraft(e.target.value)}
+                          onBlur={() => commitRename(c.id)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') commitRename(c.id); }}
+                          style={{ fontWeight: 600, fontSize: '0.95rem', border: `1px solid ${BORDER}`, borderRadius: 4, padding: '2px 6px', width: '60%' }} />
+                      ) : (
+                        <span onClick={() => startRename(c)} style={{ fontWeight: 600, fontSize: '0.95rem', cursor: 'pointer', borderBottom: `1px dashed ${BORDER}` }}>{c.name}</span>
+                      )}
+                      <span style={{ color: MUTED, fontSize: '0.85rem' }}>{c.pct}%</span>
+                    </div>
+                    <input type="range" min="0" max="40" value={c.pct} onChange={(e) => handlePctChange(c.id, e.target.value)}
+                      className="ledger-slider"
+                      style={{ accentColor: c.color, background: `linear-gradient(to right, ${c.color} ${(c.pct/40)*100}%, ${BORDER} ${(c.pct/40)*100}%)` }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: '0.8rem' }}>
+                      <span style={{ color: MUTED }}>Planned {formatGHS(planned)}</span>
+                      <span style={{ color: isOver ? BRICK : MUTED }}>{isOver ? `Over by ${formatGHS(spent - planned)}` : `${formatGHS(remaining)} left`}</span>
+                    </div>
+                    <div style={{ background: BORDER, borderRadius: 4, height: 6, overflow: 'hidden', marginTop: 8 }}>
+                      <div style={{ width: `${usedPct}%`, background: isOver ? BRICK : c.color, height: '100%', transition: 'width 300ms ease' }} />
+                    </div>
+                    <div style={{ marginTop: 12 }}>
+                      {!isOpen ? (
+                        <button onClick={() => { setOpenForm(c.id); setFormAmount(''); setFormNote(''); }}
+                          style={{ color: c.color, background: 'none', border: 'none', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 500, padding: 0 }}>+ Add entry</button>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                          <input type="number" placeholder="Amount" value={formAmount} onChange={(e) => setFormAmount(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(c.id); } }} autoFocus
+                            style={{ border: `1px solid ${BORDER}`, borderRadius: 6, padding: '8px', fontSize: '0.85rem', width: '100%' }} />
+                          <input type="text" placeholder="Note (optional)" value={formNote} onChange={(e) => setFormNote(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(c.id); } }}
+                            style={{ border: `1px solid ${BORDER}`, borderRadius: 6, padding: '8px', fontSize: '0.85rem', width: '100%' }} />
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={() => addTransaction(c.id)} style={{ background: c.color, color: '#FFF', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer' }}>Save</button>
+                            <button onClick={() => setOpenForm(null)} style={{ background: 'none', color: MUTED, border: 'none', fontSize: '0.85rem', cursor: 'pointer' }}>Cancel</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTop: `1px solid ${BORDER}` }}>
-          <span style={{ color: saveError ? BRICK : BORDER, fontSize: '0.75rem' }}>
-            {saveError ? "Couldn't save — check your connection" : ' '}
-          </span>
-          <div style={{ display: 'flex', gap: 16 }}>
-            <button onClick={handleExportCSV} style={{ color: GOLD, background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 500 }}>Export CSV</button>
-            <button onClick={handleReset} style={{ color: MUTED, background: 'none', border: 'none', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}>Reset ledger</button>
+        {activeTab === 'history' && (
+          <div style={pageStyle}>
+            <h1 style={pageTitleStyle}>History</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+              <button onClick={() => goMonth(-1)} disabled={monthIdx <= 0} style={{ color: monthIdx <= 0 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx <= 0 ? 'default' : 'pointer', fontSize: '1rem' }}>‹</button>
+              <span style={{ color: MUTED, fontSize: '0.9rem' }}>{monthLabel(activeMonth)}</span>
+              <button onClick={() => goMonth(1)} disabled={monthIdx >= availableMonths.length - 1} style={{ color: monthIdx >= availableMonths.length - 1 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx >= availableMonths.length - 1 ? 'default' : 'pointer', fontSize: '1rem' }}>›</button>
+            </div>
+            {currentTx.length === 0 ? (
+              <p style={{ color: MUTED, fontSize: '0.85rem' }}>No entries this month.</p>
+            ) : (
+              <div style={{ border: `1px solid ${BORDER}`, borderRadius: 8, background: CARD }}>
+                {currentTx.map((t, i) => {
+                  const cat = categories.find((c) => c.id === t.categoryId);
+                  return (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderTop: i === 0 ? 'none' : `1px solid ${BORDER}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: cat?.color || MUTED, flexShrink: 0 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontSize: '0.85rem', margin: 0 }}>{cat?.name || 'Unknown'}</p>
+                          {t.note && <p style={{ color: MUTED, fontSize: '0.75rem', margin: 0 }}>{t.note}</p>}
+                          <p style={{ color: MUTED, fontSize: '0.7rem', margin: 0 }}>{new Date(t.date).toLocaleDateString('en-GB')}</p>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                        <span style={{ fontFamily: SERIF, fontSize: '0.9rem' }}>{formatGHS(t.amount)}</span>
+                        <button onClick={() => deleteTransaction(t.id)} style={{ color: MUTED, background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem' }}>×</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'settings' && (
+          <div style={pageStyle}>
+            <h1 style={pageTitleStyle}>Settings</h1>
+
+            <div style={{ marginBottom: 28 }}>
+              <h2 style={{ fontFamily: SERIF, fontSize: '1rem', fontWeight: 600, marginBottom: 10 }}>Data</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <button onClick={handleExportCSV} style={settingsBtnStyle}>Export CSV</button>
+                <button onClick={handleExportBackup} style={settingsBtnStyle}>Export full backup (JSON)</button>
+                <button onClick={handleImportClick} style={settingsBtnStyle}>Restore from backup</button>
+                <input ref={importInputRef} type="file" accept="application/json" onChange={handleImportFile} style={{ display: 'none' }} />
+                {restoreMsg && <p style={{ color: restoreMsg.includes('valid') ? BRICK : FOREST, fontSize: '0.8rem', margin: '4px 0 0' }}>{restoreMsg}</p>}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 28 }}>
+              <h2 style={{ fontFamily: SERIF, fontSize: '1rem', fontWeight: 600, marginBottom: 10 }}>Reset</h2>
+              <button onClick={handleReset} style={{ ...settingsBtnStyle, color: BRICK, borderColor: BRICK }}>Reset ledger</button>
+            </div>
+
+            <div>
+              <p style={{ color: saveError ? BRICK : MUTED, fontSize: '0.75rem' }}>
+                {saveError ? "Couldn't save — check your connection" : 'Your data is saved automatically on this device.'}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {activeTab === 'home' && (
+        <button onClick={() => { setOpenForm('quickadd'); setFormCategoryId(categories[0]?.id || null); setFormAmount(''); setFormNote(''); }}
+          style={{
+            position: 'fixed', bottom: 78, right: 20, width: 56, height: 56, borderRadius: '50%',
+            background: FOREST, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 4px 14px rgba(28,43,34,0.25)', cursor: 'pointer', zIndex: 10,
+          }}
+          aria-label="Add entry">
+          <IconPlus color="#FFF" />
+        </button>
+      )}
+
+      {openForm === 'quickadd' && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,43,34,0.4)', display: 'flex', alignItems: 'flex-end', zIndex: 20 }}
+          onClick={() => setOpenForm(null)}>
+          <div style={{ background: CARD, width: '100%', borderRadius: '16px 16px 0 0', padding: 24 }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontFamily: SERIF, fontSize: '1.1rem', margin: '0 0 16px' }}>Add entry</h3>
+            <label style={{ color: MUTED, fontSize: '0.8rem' }}>Category</label>
+            <select value={formCategoryId || ''} onChange={(e) => setFormCategoryId(e.target.value)}
+              style={{ width: '100%', border: `1px solid ${BORDER}`, borderRadius: 6, padding: '8px', fontSize: '0.9rem', margin: '4px 0 12px' }}>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <input type="number" placeholder="Amount" value={formAmount} onChange={(e) => setFormAmount(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(formCategoryId); } }} autoFocus
+              style={{ width: '100%', border: `1px solid ${BORDER}`, borderRadius: 6, padding: '10px', fontSize: '0.9rem', marginBottom: 10 }} />
+            <input type="text" placeholder="Note (optional)" value={formNote} onChange={(e) => setFormNote(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(formCategoryId); } }}
+              style={{ width: '100%', border: `1px solid ${BORDER}`, borderRadius: 6, padding: '10px', fontSize: '0.9rem', marginBottom: 16 }} />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => addTransaction(formCategoryId)} style={{ flex: 1, background: FOREST, color: '#FFF', border: 'none', borderRadius: 8, padding: '12px', fontSize: '0.9rem', cursor: 'pointer' }}>Save</button>
+              <button onClick={() => setOpenForm(null)} style={{ flex: 1, background: 'none', color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 8, padding: '12px', fontSize: '0.9rem', cursor: 'pointer' }}>Cancel</button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      <nav style={{ display: 'flex', borderTop: `1px solid ${BORDER}`, background: CARD, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        {[
+          { id: 'home', label: 'Home', Icon: IconHome },
+          { id: 'budget', label: 'Budget', Icon: IconBudget },
+          { id: 'history', label: 'History', Icon: IconHistory },
+          { id: 'settings', label: 'Settings', Icon: IconSettings },
+        ].map((tab) => {
+          const active = activeTab === tab.id;
+          const color = active ? FOREST : MUTED;
+          return (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '10px 0', background: 'none', border: 'none', cursor: 'pointer' }}>
+              <tab.Icon color={color} />
+              <span style={{ fontSize: '0.7rem', color, fontWeight: active ? 600 : 400 }}>{tab.label}</span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }
+
+const settingsBtnStyle = {
+  textAlign: 'left', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8,
+  padding: '12px 16px', fontSize: '0.9rem', cursor: 'pointer', color: INK,
+};
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<Ledger />);
