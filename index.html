@@ -60,7 +60,7 @@
 
 <script type="text/plain" id="app-source">const { useState, useEffect, useCallback, useRef } = React;
 
-const STORAGE_KEY = 'ledger-state-v2';
+const STORAGE_KEY = 'ledger-state-v3';
 
 const PAPER = '#F6F3EC';
 const INK = '#1C2B22';
@@ -75,11 +75,11 @@ const SERIF = "'Fraunces', Georgia, serif";
 const SANS = "'IBM Plex Sans', system-ui, sans-serif";
 
 const DEFAULT_CATEGORIES = [
-  { id: 'essentials', name: 'Essentials', pct: 10, color: '#6B7B58' },
-  { id: 'guiltfree', name: 'Guilt-Free', pct: 5, color: '#C9A227' },
-  { id: 'debtinvest', name: 'Debt / Invest', pct: 10, color: '#2F6F5E' },
-  { id: 'shortterm', name: 'Short-Term Buffer', pct: 15, color: '#B5651D' },
-  { id: 'longterm', name: 'Long-Term Wealth', pct: 15, color: '#3E5C76' },
+  { id: 'essentials', name: 'Essentials', pct: 10, color: '#6B7B58', goals: [], recurring: [] },
+  { id: 'guiltfree', name: 'Guilt-Free', pct: 5, color: '#C9A227', goals: [], recurring: [] },
+  { id: 'debtinvest', name: 'Debt / Invest', pct: 10, color: '#2F6F5E', goals: [], recurring: [] },
+  { id: 'shortterm', name: 'Short-Term Buffer', pct: 15, color: '#B5651D', goals: [], recurring: [] },
+  { id: 'longterm', name: 'Long-Term Wealth', pct: 15, color: '#3E5C76', goals: [], recurring: [] },
 ];
 
 function monthKey(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
@@ -91,45 +91,38 @@ function formatGHS(n) {
   const sign = n < 0 ? '-' : '';
   return `${sign}GHC ${Math.abs(Math.round(n)).toLocaleString('en')}`;
 }
+function withDefaults(categories) {
+  // ensures categories loaded from older saved data still have goals/recurring arrays
+  return categories.map((c) => ({ goals: [], recurring: [], ...c }));
+}
 
-// ---- simple inline icon set (no external icon library needed) ----
+// ---- inline icon set ----
 function IconHome({ color }) {
-  return (
-    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 9.5L10 3l7 6.5" /><path d="M5 8.5V17h4v-5h2v5h4V8.5" />
-    </svg>
-  );
+  return (<svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 9.5L10 3l7 6.5" /><path d="M5 8.5V17h4v-5h2v5h4V8.5" /></svg>);
 }
 function IconBudget({ color }) {
-  return (
-    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round">
-      <line x1="3" y1="6" x2="17" y2="6" /><circle cx="11" cy="6" r="1.8" fill={color} stroke="none" />
-      <line x1="3" y1="10" x2="17" y2="10" /><circle cx="7" cy="10" r="1.8" fill={color} stroke="none" />
-      <line x1="3" y1="14" x2="17" y2="14" /><circle cx="13" cy="14" r="1.8" fill={color} stroke="none" />
-    </svg>
-  );
+  return (<svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round">
+    <line x1="3" y1="6" x2="17" y2="6" /><circle cx="11" cy="6" r="1.8" fill={color} stroke="none" />
+    <line x1="3" y1="10" x2="17" y2="10" /><circle cx="7" cy="10" r="1.8" fill={color} stroke="none" />
+    <line x1="3" y1="14" x2="17" y2="14" /><circle cx="13" cy="14" r="1.8" fill={color} stroke="none" /></svg>);
+}
+function IconGoals({ color }) {
+  return (<svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6">
+    <circle cx="10" cy="10" r="7" /><circle cx="10" cy="10" r="4" /><circle cx="10" cy="10" r="1" fill={color} stroke="none" /></svg>);
 }
 function IconHistory({ color }) {
-  return (
-    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="10" cy="10" r="7" /><path d="M10 6.5v3.8l2.6 1.5" />
-    </svg>
-  );
+  return (<svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="10" cy="10" r="7" /><path d="M10 6.5v3.8l2.6 1.5" /></svg>);
 }
 function IconSettings({ color }) {
-  return (
-    <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round">
-      <circle cx="10" cy="10" r="2.6" />
-      <path d="M10 2.6v2M10 15.4v2M17.4 10h-2M4.6 10h-2M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4M15.2 15.2l-1.4-1.4M6.2 6.2L4.8 4.8" />
-    </svg>
-  );
+  return (<svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round">
+    <circle cx="10" cy="10" r="2.6" />
+    <path d="M10 2.6v2M10 15.4v2M17.4 10h-2M4.6 10h-2M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4M15.2 15.2l-1.4-1.4M6.2 6.2L4.8 4.8" /></svg>);
 }
 function IconPlus({ color }) {
-  return (
-    <svg width="24" height="24" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
-      <line x1="10" y1="4" x2="10" y2="16" /><line x1="4" y1="10" x2="16" y2="10" />
-    </svg>
-  );
+  return (<svg width="24" height="24" viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round">
+    <line x1="10" y1="4" x2="10" y2="16" /><line x1="4" y1="10" x2="16" y2="10" /></svg>);
 }
 
 function CustomSlider({ value, min, max, color, onChange }) {
@@ -143,41 +136,38 @@ function CustomSlider({ value, min, max, color, onChange }) {
     ratio = Math.max(0, Math.min(1, ratio));
     return Math.round(min + ratio * (max - min));
   }
-
   function handlePointerDown(e) {
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
     draggingRef.current = true;
     onChange(valueFromClientX(e.clientX));
   }
-  function handlePointerMove(e) {
-    if (!draggingRef.current) return;
-    onChange(valueFromClientX(e.clientX));
-  }
-  function handlePointerUp(e) {
-    draggingRef.current = false;
-  }
+  function handlePointerMove(e) { if (draggingRef.current) onChange(valueFromClientX(e.clientX)); }
+  function handlePointerUp() { draggingRef.current = false; }
 
   return (
     <div ref={trackRef} style={{ position: 'relative', height: 28, width: '100%' }}>
       <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', transform: 'translateY(-50%)', height: 4, borderRadius: 2, background: BORDER }} />
       <div style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: `${pct}%`, height: 4, borderRadius: 2, background: color }} />
-      <div
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        style={{
-          position: 'absolute', left: `${pct}%`, top: '50%', transform: 'translate(-50%, -50%)',
-          width: 28, height: 28, borderRadius: '50%',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          touchAction: 'none', cursor: 'pointer',
-        }}
-      >
+      <div onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}
+        style={{ position: 'absolute', left: `${pct}%`, top: '50%', transform: 'translate(-50%, -50%)', width: 28, height: 28, borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none', cursor: 'pointer' }}>
         <div style={{ width: 18, height: 18, borderRadius: '50%', background: color, border: '2px solid #FFF', boxShadow: '0 1px 4px rgba(0,0,0,0.25)' }} />
       </div>
     </div>
   );
 }
+
+function ProgressBar({ pct, color, height = 6 }) {
+  const clamped = Math.min(100, Math.max(0, pct));
+  return (
+    <div style={{ background: BORDER, borderRadius: height / 2, height, overflow: 'hidden' }}>
+      <div style={{ width: `${clamped}%`, background: color, height: '100%', transition: 'width 300ms ease' }} />
+    </div>
+  );
+}
+
+const inputStyle = { border: `1px solid ${BORDER}`, borderRadius: 6, padding: '8px', fontSize: '0.85rem', width: '100%' };
+const settingsBtnStyle = { textAlign: 'left', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, padding: '12px 16px', fontSize: '0.9rem', cursor: 'pointer', color: INK };
 
 function Ledger() {
   const [loading, setLoading] = useState(true);
@@ -187,12 +177,29 @@ function Ledger() {
   const [months, setMonths] = useState({});
   const [activeMonth, setActiveMonth] = useState(monthKey(new Date()));
   const [activeTab, setActiveTab] = useState('home');
-  const [openForm, setOpenForm] = useState(null);
+
+  // add-entry form (used by per-category form + home quick-add sheet)
+  const [openForm, setOpenForm] = useState(null); // categoryId, or 'quickadd', or null
   const [formAmount, setFormAmount] = useState('');
   const [formNote, setFormNote] = useState('');
   const [formCategoryId, setFormCategoryId] = useState(null);
+  const [formGoalId, setFormGoalId] = useState('');
+
   const [editingNameId, setEditingNameId] = useState(null);
   const [nameDraft, setNameDraft] = useState('');
+
+  // inline "new goal" / "new recurring" forms, keyed by categoryId
+  const [newGoalFor, setNewGoalFor] = useState(null);
+  const [newGoalName, setNewGoalName] = useState('');
+  const [newGoalTarget, setNewGoalTarget] = useState('');
+  const [newRecurringFor, setNewRecurringFor] = useState(null);
+  const [newRecurringName, setNewRecurringName] = useState('');
+  const [newRecurringAmount, setNewRecurringAmount] = useState('');
+
+  // goal contribution sheet
+  const [contributeGoal, setContributeGoal] = useState(null); // { categoryId, goalId, goalName, color }
+  const [contributeAmount, setContributeAmount] = useState('');
+
   const [restoreMsg, setRestoreMsg] = useState('');
   const importInputRef = useRef(null);
 
@@ -203,59 +210,72 @@ function Ledger() {
         if (res && res.value) {
           const parsed = JSON.parse(res.value);
           if (parsed.income) setIncome(parsed.income);
-          if (parsed.categories) setCategories(parsed.categories);
+          if (parsed.categories) setCategories(withDefaults(parsed.categories));
           if (parsed.months) setMonths(parsed.months);
         } else {
-          // one-time migration from the old single-page version's key, if present
-          const old = await window.storage.get('ledger-state-v1', false).catch(() => null);
-          if (old && old.value) {
-            const parsed = JSON.parse(old.value);
-            if (parsed.income) setIncome(parsed.income);
-            if (parsed.categories) setCategories(parsed.categories);
-            if (parsed.months) setMonths(parsed.months);
+          for (const oldKey of ['ledger-state-v2', 'ledger-state-v1']) {
+            const old = await window.storage.get(oldKey, false).catch(() => null);
+            if (old && old.value) {
+              const parsed = JSON.parse(old.value);
+              if (parsed.income) setIncome(parsed.income);
+              if (parsed.categories) setCategories(withDefaults(parsed.categories));
+              if (parsed.months) setMonths(parsed.months);
+              break;
+            }
           }
         }
-      } catch (e) {
-        // fresh start
-      } finally {
-        setLoading(false);
-      }
+      } catch (e) {}
+      finally { setLoading(false); }
     })();
   }, []);
 
   const persist = useCallback(async (nextIncome, nextCategories, nextMonths) => {
     try {
-      const result = await window.storage.set(
-        STORAGE_KEY,
-        JSON.stringify({ income: nextIncome, categories: nextCategories, months: nextMonths }),
-        false
-      );
+      const result = await window.storage.set(STORAGE_KEY, JSON.stringify({ income: nextIncome, categories: nextCategories, months: nextMonths }), false);
       setSaveError(!result);
-    } catch (e) {
-      setSaveError(true);
-    }
+    } catch (e) { setSaveError(true); }
   }, []);
+
+  // auto-log recurring costs for the active month, once categories/month are known
+  useEffect(() => {
+    if (loading) return;
+    const withMonth = ensureMonth(activeMonth, months);
+    const existing = withMonth[activeMonth].transactions;
+    const toAdd = [];
+    categories.forEach((c) => {
+      (c.recurring || []).forEach((r) => {
+        const already = existing.some((t) => t.recurringId === r.id);
+        if (!already) {
+          toAdd.push({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            categoryId: c.id, amount: r.amount, note: r.name,
+            date: new Date().toISOString(), recurringId: r.id,
+          });
+        }
+      });
+    });
+    if (toAdd.length > 0) {
+      const nextMonths = { ...withMonth, [activeMonth]: { transactions: [...toAdd, ...withMonth[activeMonth].transactions] } };
+      setMonths(nextMonths);
+      persist(income, categories, nextMonths);
+    }
+    // eslint-disable-next-line
+  }, [activeMonth, loading, categories.map(c => (c.recurring || []).map(r => r.id).join(',')).join('|')]);
 
   function handleIncomeChange(value) {
     const n = Math.max(0, Number(value) || 0);
-    setIncome(n);
-    persist(n, categories, months);
+    setIncome(n); persist(n, categories, months);
   }
-
   function handlePctChange(id, value) {
     const n = Math.max(0, Math.min(100, Number(value)));
     const next = categories.map((c) => (c.id === id ? { ...c, pct: n } : c));
-    setCategories(next);
-    persist(income, next, months);
+    setCategories(next); persist(income, next, months);
   }
-
   function startRename(c) { setEditingNameId(c.id); setNameDraft(c.name); }
   function commitRename(id) {
     const trimmed = nameDraft.trim();
     const next = categories.map((c) => (c.id === id ? { ...c, name: trimmed || c.name } : c));
-    setCategories(next);
-    persist(income, next, months);
-    setEditingNameId(null);
+    setCategories(next); persist(income, next, months); setEditingNameId(null);
   }
 
   function ensureMonth(key, monthsObj) {
@@ -263,49 +283,78 @@ function Ledger() {
     return { ...monthsObj, [key]: { transactions: [] } };
   }
 
-  function addTransaction(categoryId) {
+  function addTransaction(categoryId, goalId) {
     const amt = Number(formAmount);
     if (!amt || amt <= 0) return;
     const withMonth = ensureMonth(activeMonth, months);
     const tx = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       categoryId, amount: amt, note: formNote.trim(), date: new Date().toISOString(),
+      goalId: goalId || undefined,
     };
     const nextMonths = { ...withMonth, [activeMonth]: { transactions: [tx, ...withMonth[activeMonth].transactions] } };
-    setMonths(nextMonths);
-    persist(income, categories, nextMonths);
-    setFormAmount(''); setFormNote(''); setOpenForm(null); setFormCategoryId(null);
+    setMonths(nextMonths); persist(income, categories, nextMonths);
+    setFormAmount(''); setFormNote(''); setOpenForm(null); setFormCategoryId(null); setFormGoalId('');
+  }
+
+  function addGoalContribution() {
+    const amt = Number(contributeAmount);
+    if (!amt || amt <= 0 || !contributeGoal) return;
+    const withMonth = ensureMonth(activeMonth, months);
+    const tx = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      categoryId: contributeGoal.categoryId, amount: amt, note: `Toward: ${contributeGoal.goalName}`,
+      date: new Date().toISOString(), goalId: contributeGoal.goalId,
+    };
+    const nextMonths = { ...withMonth, [activeMonth]: { transactions: [tx, ...withMonth[activeMonth].transactions] } };
+    setMonths(nextMonths); persist(income, categories, nextMonths);
+    setContributeAmount(''); setContributeGoal(null);
   }
 
   function deleteTransaction(txId) {
     const list = months[activeMonth]?.transactions || [];
     const nextMonths = { ...months, [activeMonth]: { transactions: list.filter((t) => t.id !== txId) } };
-    setMonths(nextMonths);
-    persist(income, categories, nextMonths);
+    setMonths(nextMonths); persist(income, categories, nextMonths);
+  }
+
+  function addGoal(categoryId) {
+    const target = Number(newGoalTarget);
+    if (!newGoalName.trim() || !target || target <= 0) return;
+    const goal = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: newGoalName.trim(), target };
+    const next = categories.map((c) => (c.id === categoryId ? { ...c, goals: [...(c.goals || []), goal] } : c));
+    setCategories(next); persist(income, next, months);
+    setNewGoalFor(null); setNewGoalName(''); setNewGoalTarget('');
+  }
+  function deleteGoal(categoryId, goalId) {
+    const next = categories.map((c) => (c.id === categoryId ? { ...c, goals: (c.goals || []).filter((g) => g.id !== goalId) } : c));
+    setCategories(next); persist(income, next, months);
+  }
+
+  function addRecurring(categoryId) {
+    const amount = Number(newRecurringAmount);
+    if (!newRecurringName.trim() || !amount || amount <= 0) return;
+    const item = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: newRecurringName.trim(), amount };
+    const next = categories.map((c) => (c.id === categoryId ? { ...c, recurring: [...(c.recurring || []), item] } : c));
+    setCategories(next); persist(income, next, months);
+    setNewRecurringFor(null); setNewRecurringName(''); setNewRecurringAmount('');
+  }
+  function deleteRecurring(categoryId, recurringId) {
+    const next = categories.map((c) => (c.id === categoryId ? { ...c, recurring: (c.recurring || []).filter((r) => r.id !== recurringId) } : c));
+    setCategories(next); persist(income, next, months);
+  }
+
+  function goalSaved(goalId) {
+    let total = 0;
+    Object.values(months).forEach((m) => {
+      (m.transactions || []).forEach((t) => { if (t.goalId === goalId) total += t.amount; });
+    });
+    return total;
   }
 
   async function handleReset() {
     if (!window.confirm('Clear all saved ledger data? This cannot be undone.')) return;
     setIncome(3500); setCategories(DEFAULT_CATEGORIES); setMonths({}); setActiveMonth(monthKey(new Date()));
     try { await window.storage.delete(STORAGE_KEY, false); } catch (e) {}
-  }
-
-  function handleExportCSV() {
-    const rows = [['Month', 'Date', 'Category', 'Amount (GHC)', 'Note']];
-    Object.keys(months).sort().forEach((mKey) => {
-      (months[mKey]?.transactions || []).slice().reverse().forEach((t) => {
-        const cat = categories.find((c) => c.id === t.categoryId);
-        const dateStr = new Date(t.date).toLocaleDateString('en-GB');
-        const noteEscaped = (t.note || '').replace(/"/g, '""');
-        rows.push([mKey, dateStr, cat?.name || 'Unknown', t.amount, `"${noteEscaped}"`]);
-      });
-    });
-    downloadBlob(rows.map((r) => r.join(',')).join('\n'), 'text/csv;charset=utf-8;', `ledger-export-${monthKey(new Date())}.csv`);
-  }
-
-  function handleExportBackup() {
-    const payload = JSON.stringify({ income, categories, months, exportedAt: new Date().toISOString() }, null, 2);
-    downloadBlob(payload, 'application/json', `ledger-backup-${monthKey(new Date())}.json`);
   }
 
   function downloadBlob(content, type, filename) {
@@ -316,9 +365,20 @@ function Ledger() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
-
+  function handleExportCSV() {
+    const rows = [['Month', 'Date', 'Category', 'Amount (GHC)', 'Note']];
+    Object.keys(months).sort().forEach((mKey) => {
+      (months[mKey]?.transactions || []).slice().reverse().forEach((t) => {
+        const cat = categories.find((c) => c.id === t.categoryId);
+        rows.push([mKey, new Date(t.date).toLocaleDateString('en-GB'), cat?.name || 'Unknown', t.amount, `"${(t.note || '').replace(/"/g, '""')}"`]);
+      });
+    });
+    downloadBlob(rows.map((r) => r.join(',')).join('\n'), 'text/csv;charset=utf-8;', `ledger-export-${monthKey(new Date())}.csv`);
+  }
+  function handleExportBackup() {
+    downloadBlob(JSON.stringify({ income, categories, months, exportedAt: new Date().toISOString() }, null, 2), 'application/json', `ledger-backup-${monthKey(new Date())}.json`);
+  }
   function handleImportClick() { importInputRef.current?.click(); }
-
   function handleImportFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -326,17 +386,11 @@ function Ledger() {
     reader.onload = (ev) => {
       try {
         const parsed = JSON.parse(ev.target.result);
-        if (typeof parsed.income !== 'number' || !Array.isArray(parsed.categories) || typeof parsed.months !== 'object') {
-          throw new Error('shape');
-        }
-        setIncome(parsed.income);
-        setCategories(parsed.categories);
-        setMonths(parsed.months);
-        persist(parsed.income, parsed.categories, parsed.months);
+        if (typeof parsed.income !== 'number' || !Array.isArray(parsed.categories) || typeof parsed.months !== 'object') throw new Error('shape');
+        setIncome(parsed.income); setCategories(withDefaults(parsed.categories)); setMonths(parsed.months);
+        persist(parsed.income, withDefaults(parsed.categories), parsed.months);
         setRestoreMsg('Backup restored successfully.');
-      } catch (err) {
-        setRestoreMsg("That file doesn't look like a valid ledger backup.");
-      }
+      } catch (err) { setRestoreMsg("That file doesn't look like a valid ledger backup."); }
       setTimeout(() => setRestoreMsg(''), 4000);
     };
     reader.readAsText(file);
@@ -351,21 +405,24 @@ function Ledger() {
   const totalSpent = currentTx.reduce((s, t) => s + t.amount, 0);
   const availableMonths = Array.from(new Set([...Object.keys(months), monthKey(new Date())])).sort();
   const monthIdx = availableMonths.indexOf(activeMonth);
-  function goMonth(delta) {
-    const idx = monthIdx + delta;
-    if (idx >= 0 && idx < availableMonths.length) setActiveMonth(availableMonths[idx]);
-  }
+  function goMonth(delta) { const idx = monthIdx + delta; if (idx >= 0 && idx < availableMonths.length) setActiveMonth(availableMonths[idx]); }
+
+  const allGoals = categories.flatMap((c) => (c.goals || []).map((g) => ({ ...g, categoryId: c.id, categoryName: c.name, color: c.color })));
 
   if (loading) {
-    return (
-      <div style={{ background: PAPER, minHeight: '100vh', fontFamily: SANS, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: MUTED }}>Opening the ledger…</p>
-      </div>
-    );
+    return (<div style={{ background: PAPER, minHeight: '100vh', fontFamily: SANS, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <p style={{ color: MUTED }}>Opening the ledger…</p></div>);
   }
 
   const pageStyle = { maxWidth: 640, margin: '0 auto', padding: '24px 20px 100px' };
   const pageTitleStyle = { fontFamily: SERIF, fontSize: '1.5rem', fontWeight: 600, margin: '0 0 20px' };
+  const monthNav = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+      <button onClick={() => goMonth(-1)} disabled={monthIdx <= 0} style={{ color: monthIdx <= 0 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx <= 0 ? 'default' : 'pointer', fontSize: '1rem' }}>‹</button>
+      <span style={{ color: MUTED, fontSize: '0.9rem' }}>{monthLabel(activeMonth)}</span>
+      <button onClick={() => goMonth(1)} disabled={monthIdx >= availableMonths.length - 1} style={{ color: monthIdx >= availableMonths.length - 1 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx >= availableMonths.length - 1 ? 'default' : 'pointer', fontSize: '1rem' }}>›</button>
+    </div>
+  );
 
   return (
     <div style={{ background: PAPER, fontFamily: SANS, color: INK, minHeight: '100vh' }}>
@@ -376,15 +433,36 @@ function Ledger() {
             <h1 style={pageTitleStyle}>Your Ledger</h1>
             <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 24, marginBottom: 20 }}>
               <p style={{ color: MUTED, fontSize: '0.85rem', margin: '0 0 4px' }}>Still unaccounted for this month</p>
-              <p style={{ fontFamily: SERIF, fontSize: '2.5rem', fontWeight: 500, lineHeight: 1.1, color: unallocatedAmount < 0 ? BRICK : INK, margin: 0 }}>
-                {formatGHS(unallocatedAmount)}
-              </p>
+              <p style={{ fontFamily: SERIF, fontSize: '2.5rem', fontWeight: 500, lineHeight: 1.1, color: unallocatedAmount < 0 ? BRICK : INK, margin: 0 }}>{formatGHS(unallocatedAmount)}</p>
               <div style={{ display: 'flex', gap: 32, marginTop: 20, paddingTop: 20, borderTop: `1px solid ${BORDER}` }}>
                 <div><p style={{ color: MUTED, fontSize: '0.8rem', margin: 0 }}>Planned</p><p style={{ fontFamily: SERIF, fontSize: '1.25rem', margin: 0 }}>{formatGHS(totalPlanned)}</p></div>
                 <div><p style={{ color: MUTED, fontSize: '0.8rem', margin: 0 }}>Spent so far</p><p style={{ fontFamily: SERIF, fontSize: '1.25rem', margin: 0 }}>{formatGHS(totalSpent)}</p></div>
               </div>
               {overAllocated && <p style={{ color: BRICK, fontSize: '0.85rem', marginTop: 16, marginBottom: 0 }}>Your categories add up to {totalAllocatedPct}% — over 100%. Adjust in Budget.</p>}
             </div>
+
+            {allGoals.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <h2 style={{ fontFamily: SERIF, fontSize: '1rem', fontWeight: 600, margin: 0 }}>Goals</h2>
+                  <button onClick={() => setActiveTab('goals')} style={{ background: 'none', border: 'none', color: GOLD, fontSize: '0.8rem', cursor: 'pointer' }}>See all</button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {allGoals.slice(0, 2).map((g) => {
+                    const saved = goalSaved(g.id);
+                    return (
+                      <div key={g.id} style={{ background: CARD, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${g.color}`, borderRadius: 8, padding: 14 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 6 }}>
+                          <span style={{ fontWeight: 600 }}>{g.name}</span>
+                          <span style={{ color: MUTED }}>{formatGHS(saved)} / {formatGHS(g.target)}</span>
+                        </div>
+                        <ProgressBar pct={(saved / g.target) * 100} color={g.color} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <h2 style={{ fontFamily: SERIF, fontSize: '1rem', fontWeight: 600, marginBottom: 10 }}>Recent entries</h2>
             {currentTx.length === 0 ? (
@@ -399,7 +477,7 @@ function Ledger() {
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: cat?.color || MUTED, flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
                           <p style={{ fontSize: '0.85rem', margin: 0 }}>{cat?.name || 'Unknown'}</p>
-                          {t.note && <p style={{ color: MUTED, fontSize: '0.75rem', margin: 0 }}>{t.note}</p>}
+                          {t.note && <p style={{ color: MUTED, fontSize: '0.75rem', margin: 0 }}>{t.note}{t.recurringId ? ' · recurring' : ''}</p>}
                         </div>
                       </div>
                       <span style={{ fontFamily: SERIF, fontSize: '0.9rem' }}>{formatGHS(t.amount)}</span>
@@ -414,12 +492,7 @@ function Ledger() {
         {activeTab === 'budget' && (
           <div style={pageStyle}>
             <h1 style={pageTitleStyle}>Budget</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-              <button onClick={() => goMonth(-1)} disabled={monthIdx <= 0} style={{ color: monthIdx <= 0 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx <= 0 ? 'default' : 'pointer', fontSize: '1rem' }}>‹</button>
-              <span style={{ color: MUTED, fontSize: '0.9rem' }}>{monthLabel(activeMonth)}</span>
-              <button onClick={() => goMonth(1)} disabled={monthIdx >= availableMonths.length - 1} style={{ color: monthIdx >= availableMonths.length - 1 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx >= availableMonths.length - 1 ? 'default' : 'pointer', fontSize: '1rem' }}>›</button>
-            </div>
-
+            {monthNav}
             <div style={{ marginBottom: 24 }}>
               <label style={{ color: MUTED, fontSize: '0.8rem' }}>Monthly income</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
@@ -438,13 +511,14 @@ function Ledger() {
                 const isOver = spent > planned;
                 const isOpen = openForm === c.id;
                 const isEditingName = editingNameId === c.id;
+                const catGoals = c.goals || [];
+                const catRecurring = c.recurring || [];
 
                 return (
                   <div key={c.id} style={{ background: CARD, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${c.color}`, borderRadius: 8, padding: 18 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, alignItems: 'center' }}>
                       {isEditingName ? (
-                        <input autoFocus value={nameDraft} onChange={(e) => setNameDraft(e.target.value)}
-                          onBlur={() => commitRename(c.id)}
+                        <input autoFocus value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} onBlur={() => commitRename(c.id)}
                           onKeyDown={(e) => { if (e.key === 'Enter') commitRename(c.id); }}
                           style={{ fontWeight: 600, fontSize: '0.95rem', border: `1px solid ${BORDER}`, borderRadius: 4, padding: '2px 6px', width: '60%' }} />
                       ) : (
@@ -457,26 +531,91 @@ function Ledger() {
                       <span style={{ color: MUTED }}>Planned {formatGHS(planned)}</span>
                       <span style={{ color: isOver ? BRICK : MUTED }}>{isOver ? `Over by ${formatGHS(spent - planned)}` : `${formatGHS(remaining)} left`}</span>
                     </div>
-                    <div style={{ background: BORDER, borderRadius: 4, height: 6, overflow: 'hidden', marginTop: 8 }}>
-                      <div style={{ width: `${usedPct}%`, background: isOver ? BRICK : c.color, height: '100%', transition: 'width 300ms ease' }} />
-                    </div>
+                    <ProgressBar pct={usedPct} color={isOver ? BRICK : c.color} />
+
                     <div style={{ marginTop: 12 }}>
                       {!isOpen ? (
-                        <button onClick={() => { setOpenForm(c.id); setFormAmount(''); setFormNote(''); }}
+                        <button onClick={() => { setOpenForm(c.id); setFormAmount(''); setFormNote(''); setFormGoalId(''); }}
                           style={{ color: c.color, background: 'none', border: 'none', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 500, padding: 0 }}>+ Add entry</button>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                           <input type="number" placeholder="Amount" value={formAmount} onChange={(e) => setFormAmount(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(c.id); } }} autoFocus
-                            style={{ border: `1px solid ${BORDER}`, borderRadius: 6, padding: '8px', fontSize: '0.85rem', width: '100%' }} />
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(c.id, formGoalId || undefined); } }} autoFocus style={inputStyle} />
                           <input type="text" placeholder="Note (optional)" value={formNote} onChange={(e) => setFormNote(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(c.id); } }}
-                            style={{ border: `1px solid ${BORDER}`, borderRadius: 6, padding: '8px', fontSize: '0.85rem', width: '100%' }} />
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(c.id, formGoalId || undefined); } }} style={inputStyle} />
+                          {catGoals.length > 0 && (
+                            <select value={formGoalId} onChange={(e) => setFormGoalId(e.target.value)} style={inputStyle}>
+                              <option value="">Not toward a goal</option>
+                              {catGoals.map((g) => <option key={g.id} value={g.id}>Toward: {g.name}</option>)}
+                            </select>
+                          )}
                           <div style={{ display: 'flex', gap: 8 }}>
-                            <button onClick={() => addTransaction(c.id)} style={{ background: c.color, color: '#FFF', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer' }}>Save</button>
+                            <button onClick={() => addTransaction(c.id, formGoalId || undefined)} style={{ background: c.color, color: '#FFF', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer' }}>Save</button>
                             <button onClick={() => setOpenForm(null)} style={{ background: 'none', color: MUTED, border: 'none', fontSize: '0.85rem', cursor: 'pointer' }}>Cancel</button>
                           </div>
                         </div>
+                      )}
+                    </div>
+
+                    {/* Recurring costs */}
+                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${BORDER}` }}>
+                      <p style={{ fontSize: '0.75rem', color: MUTED, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 8px' }}>Recurring</p>
+                      {catRecurring.map((r) => (
+                        <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', marginBottom: 6 }}>
+                          <span>{r.name}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ color: MUTED }}>{formatGHS(r.amount)}/mo</span>
+                            <button onClick={() => deleteRecurring(c.id, r.id)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer' }}>×</button>
+                          </div>
+                        </div>
+                      ))}
+                      {newRecurringFor === c.id ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                          <input placeholder="Name (e.g. Spotify)" value={newRecurringName} onChange={(e) => setNewRecurringName(e.target.value)} style={inputStyle} autoFocus />
+                          <input type="number" placeholder="Amount" value={newRecurringAmount} onChange={(e) => setNewRecurringAmount(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') addRecurring(c.id); }} style={inputStyle} />
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={() => addRecurring(c.id)} style={{ background: c.color, color: '#FFF', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: '0.8rem', cursor: 'pointer' }}>Add</button>
+                            <button onClick={() => setNewRecurringFor(null)} style={{ background: 'none', color: MUTED, border: 'none', fontSize: '0.8rem', cursor: 'pointer' }}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setNewRecurringFor(c.id); setNewRecurringName(''); setNewRecurringAmount(''); }}
+                          style={{ background: 'none', border: 'none', color: c.color, fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}>+ Add recurring cost</button>
+                      )}
+                    </div>
+
+                    {/* Goals */}
+                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${BORDER}` }}>
+                      <p style={{ fontSize: '0.75rem', color: MUTED, textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 8px' }}>Goals</p>
+                      {catGoals.map((g) => {
+                        const saved = goalSaved(g.id);
+                        return (
+                          <div key={g.id} style={{ marginBottom: 10 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: 4 }}>
+                              <span>{g.name}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ color: MUTED }}>{formatGHS(saved)} / {formatGHS(g.target)}</span>
+                                <button onClick={() => deleteGoal(c.id, g.id)} style={{ background: 'none', border: 'none', color: MUTED, cursor: 'pointer' }}>×</button>
+                              </div>
+                            </div>
+                            <ProgressBar pct={(saved / g.target) * 100} color={c.color} />
+                          </div>
+                        );
+                      })}
+                      {newGoalFor === c.id ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                          <input placeholder="Goal name (e.g. PS5)" value={newGoalName} onChange={(e) => setNewGoalName(e.target.value)} style={inputStyle} autoFocus />
+                          <input type="number" placeholder="Target amount" value={newGoalTarget} onChange={(e) => setNewGoalTarget(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') addGoal(c.id); }} style={inputStyle} />
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={() => addGoal(c.id)} style={{ background: c.color, color: '#FFF', border: 'none', borderRadius: 6, padding: '6px 14px', fontSize: '0.8rem', cursor: 'pointer' }}>Create</button>
+                            <button onClick={() => setNewGoalFor(null)} style={{ background: 'none', color: MUTED, border: 'none', fontSize: '0.8rem', cursor: 'pointer' }}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setNewGoalFor(c.id); setNewGoalName(''); setNewGoalTarget(''); }}
+                          style={{ background: 'none', border: 'none', color: c.color, fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}>+ New goal</button>
                       )}
                     </div>
                   </div>
@@ -486,14 +625,46 @@ function Ledger() {
           </div>
         )}
 
+        {activeTab === 'goals' && (
+          <div style={pageStyle}>
+            <h1 style={pageTitleStyle}>Goals</h1>
+            {allGoals.length === 0 ? (
+              <p style={{ color: MUTED, fontSize: '0.85rem' }}>No goals yet. Add one from a category in Budget.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {allGoals.map((g) => {
+                  const saved = goalSaved(g.id);
+                  const done = saved >= g.target;
+                  return (
+                    <div key={g.id} style={{ background: CARD, border: `1px solid ${BORDER}`, borderLeft: `4px solid ${g.color}`, borderRadius: 8, padding: 16 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <div>
+                          <p style={{ fontWeight: 600, margin: 0 }}>{g.name}</p>
+                          <p style={{ color: MUTED, fontSize: '0.75rem', margin: '2px 0 0' }}>{g.categoryName}</p>
+                        </div>
+                        <span style={{ fontFamily: SERIF, fontSize: '1rem' }}>{formatGHS(saved)} / {formatGHS(g.target)}</span>
+                      </div>
+                      <div style={{ marginTop: 10 }}><ProgressBar pct={(saved / g.target) * 100} color={g.color} height={8} /></div>
+                      {done ? (
+                        <p style={{ color: FOREST, fontSize: '0.8rem', marginTop: 8, marginBottom: 0, fontWeight: 500 }}>Goal reached!</p>
+                      ) : (
+                        <button onClick={() => setContributeGoal({ categoryId: g.categoryId, goalId: g.id, goalName: g.name, color: g.color })}
+                          style={{ marginTop: 10, background: 'none', border: `1px solid ${g.color}`, color: g.color, borderRadius: 6, padding: '6px 14px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                          Add funds
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'history' && (
           <div style={pageStyle}>
             <h1 style={pageTitleStyle}>History</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-              <button onClick={() => goMonth(-1)} disabled={monthIdx <= 0} style={{ color: monthIdx <= 0 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx <= 0 ? 'default' : 'pointer', fontSize: '1rem' }}>‹</button>
-              <span style={{ color: MUTED, fontSize: '0.9rem' }}>{monthLabel(activeMonth)}</span>
-              <button onClick={() => goMonth(1)} disabled={monthIdx >= availableMonths.length - 1} style={{ color: monthIdx >= availableMonths.length - 1 ? BORDER : MUTED, background: 'none', border: 'none', cursor: monthIdx >= availableMonths.length - 1 ? 'default' : 'pointer', fontSize: '1rem' }}>›</button>
-            </div>
+            {monthNav}
             {currentTx.length === 0 ? (
               <p style={{ color: MUTED, fontSize: '0.85rem' }}>No entries this month.</p>
             ) : (
@@ -505,7 +676,7 @@ function Ledger() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: cat?.color || MUTED, flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
-                          <p style={{ fontSize: '0.85rem', margin: 0 }}>{cat?.name || 'Unknown'}</p>
+                          <p style={{ fontSize: '0.85rem', margin: 0 }}>{cat?.name || 'Unknown'}{t.recurringId ? ' · recurring' : ''}</p>
                           {t.note && <p style={{ color: MUTED, fontSize: '0.75rem', margin: 0 }}>{t.note}</p>}
                           <p style={{ color: MUTED, fontSize: '0.7rem', margin: 0 }}>{new Date(t.date).toLocaleDateString('en-GB')}</p>
                         </div>
@@ -525,7 +696,6 @@ function Ledger() {
         {activeTab === 'settings' && (
           <div style={pageStyle}>
             <h1 style={pageTitleStyle}>Settings</h1>
-
             <div style={{ marginBottom: 28 }}>
               <h2 style={{ fontFamily: SERIF, fontSize: '1rem', fontWeight: 600, marginBottom: 10 }}>Data</h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -536,52 +706,62 @@ function Ledger() {
                 {restoreMsg && <p style={{ color: restoreMsg.includes('valid') ? BRICK : FOREST, fontSize: '0.8rem', margin: '4px 0 0' }}>{restoreMsg}</p>}
               </div>
             </div>
-
             <div style={{ marginBottom: 28 }}>
               <h2 style={{ fontFamily: SERIF, fontSize: '1rem', fontWeight: 600, marginBottom: 10 }}>Reset</h2>
               <button onClick={handleReset} style={{ ...settingsBtnStyle, color: BRICK, borderColor: BRICK }}>Reset ledger</button>
             </div>
-
-            <div>
-              <p style={{ color: saveError ? BRICK : MUTED, fontSize: '0.75rem' }}>
-                {saveError ? "Couldn't save — check your connection" : 'Your data is saved automatically on this device.'}
-              </p>
-            </div>
+            <p style={{ color: saveError ? BRICK : MUTED, fontSize: '0.75rem' }}>{saveError ? "Couldn't save — check your connection" : 'Your data is saved automatically on this device.'}</p>
           </div>
         )}
       </div>
 
       {activeTab === 'home' && (
-        <button onClick={() => { setOpenForm('quickadd'); setFormCategoryId(categories[0]?.id || null); setFormAmount(''); setFormNote(''); }}
-          style={{
-            position: 'fixed', bottom: 78, right: 20, width: 56, height: 56, borderRadius: '50%',
-            background: FOREST, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 4px 14px rgba(28,43,34,0.25)', cursor: 'pointer', zIndex: 10,
-          }}
+        <button onClick={() => { setOpenForm('quickadd'); setFormCategoryId(categories[0]?.id || null); setFormAmount(''); setFormNote(''); setFormGoalId(''); }}
+          style={{ position: 'fixed', bottom: 78, right: 20, width: 56, height: 56, borderRadius: '50%', background: FOREST, border: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(28,43,34,0.25)', cursor: 'pointer', zIndex: 10 }}
           aria-label="Add entry">
           <IconPlus color="#FFF" />
         </button>
       )}
 
       {openForm === 'quickadd' && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,43,34,0.4)', display: 'flex', alignItems: 'flex-end', zIndex: 20 }}
-          onClick={() => setOpenForm(null)}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,43,34,0.4)', display: 'flex', alignItems: 'flex-end', zIndex: 20 }} onClick={() => setOpenForm(null)}>
           <div style={{ background: CARD, width: '100%', borderRadius: '16px 16px 0 0', padding: 24 }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ fontFamily: SERIF, fontSize: '1.1rem', margin: '0 0 16px' }}>Add entry</h3>
             <label style={{ color: MUTED, fontSize: '0.8rem' }}>Category</label>
-            <select value={formCategoryId || ''} onChange={(e) => setFormCategoryId(e.target.value)}
-              style={{ width: '100%', border: `1px solid ${BORDER}`, borderRadius: 6, padding: '8px', fontSize: '0.9rem', margin: '4px 0 12px' }}>
+            <select value={formCategoryId || ''} onChange={(e) => { setFormCategoryId(e.target.value); setFormGoalId(''); }} style={{ ...inputStyle, margin: '4px 0 12px' }}>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <input type="number" placeholder="Amount" value={formAmount} onChange={(e) => setFormAmount(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(formCategoryId); } }} autoFocus
-              style={{ width: '100%', border: `1px solid ${BORDER}`, borderRadius: 6, padding: '10px', fontSize: '0.9rem', marginBottom: 10 }} />
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(formCategoryId, formGoalId || undefined); } }} autoFocus
+              style={{ ...inputStyle, padding: '10px', marginBottom: 10 }} />
             <input type="text" placeholder="Note (optional)" value={formNote} onChange={(e) => setFormNote(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(formCategoryId); } }}
-              style={{ width: '100%', border: `1px solid ${BORDER}`, borderRadius: 6, padding: '10px', fontSize: '0.9rem', marginBottom: 16 }} />
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => addTransaction(formCategoryId)} style={{ flex: 1, background: FOREST, color: '#FFF', border: 'none', borderRadius: 8, padding: '12px', fontSize: '0.9rem', cursor: 'pointer' }}>Save</button>
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(formCategoryId, formGoalId || undefined); } }}
+              style={{ ...inputStyle, padding: '10px', marginBottom: 10 }} />
+            {(categories.find((c) => c.id === formCategoryId)?.goals || []).length > 0 && (
+              <select value={formGoalId} onChange={(e) => setFormGoalId(e.target.value)} style={{ ...inputStyle, padding: '10px', marginBottom: 16 }}>
+                <option value="">Not toward a goal</option>
+                {(categories.find((c) => c.id === formCategoryId)?.goals || []).map((g) => <option key={g.id} value={g.id}>Toward: {g.name}</option>)}
+              </select>
+            )}
+            <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+              <button onClick={() => addTransaction(formCategoryId, formGoalId || undefined)} style={{ flex: 1, background: FOREST, color: '#FFF', border: 'none', borderRadius: 8, padding: '12px', fontSize: '0.9rem', cursor: 'pointer' }}>Save</button>
               <button onClick={() => setOpenForm(null)} style={{ flex: 1, background: 'none', color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 8, padding: '12px', fontSize: '0.9rem', cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {contributeGoal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,43,34,0.4)', display: 'flex', alignItems: 'flex-end', zIndex: 20 }} onClick={() => setContributeGoal(null)}>
+          <div style={{ background: CARD, width: '100%', borderRadius: '16px 16px 0 0', padding: 24 }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontFamily: SERIF, fontSize: '1.1rem', margin: '0 0 16px' }}>Add funds to {contributeGoal.goalName}</h3>
+            <input type="number" placeholder="Amount" value={contributeAmount} onChange={(e) => setContributeAmount(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addGoalContribution(); } }} autoFocus
+              style={{ ...inputStyle, padding: '10px', marginBottom: 16 }} />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={addGoalContribution} style={{ flex: 1, background: contributeGoal.color, color: '#FFF', border: 'none', borderRadius: 8, padding: '12px', fontSize: '0.9rem', cursor: 'pointer' }}>Save</button>
+              <button onClick={() => setContributeGoal(null)} style={{ flex: 1, background: 'none', color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 8, padding: '12px', fontSize: '0.9rem', cursor: 'pointer' }}>Cancel</button>
             </div>
           </div>
         </div>
@@ -591,6 +771,7 @@ function Ledger() {
         {[
           { id: 'home', label: 'Home', Icon: IconHome },
           { id: 'budget', label: 'Budget', Icon: IconBudget },
+          { id: 'goals', label: 'Goals', Icon: IconGoals },
           { id: 'history', label: 'History', Icon: IconHistory },
           { id: 'settings', label: 'Settings', Icon: IconSettings },
         ].map((tab) => {
@@ -600,7 +781,7 @@ function Ledger() {
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '10px 0', background: 'none', border: 'none', cursor: 'pointer' }}>
               <tab.Icon color={color} />
-              <span style={{ fontSize: '0.7rem', color, fontWeight: active ? 600 : 400 }}>{tab.label}</span>
+              <span style={{ fontSize: '0.68rem', color, fontWeight: active ? 600 : 400 }}>{tab.label}</span>
             </button>
           );
         })}
@@ -608,11 +789,6 @@ function Ledger() {
     </div>
   );
 }
-
-const settingsBtnStyle = {
-  textAlign: 'left', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8,
-  padding: '12px 16px', fontSize: '0.9rem', cursor: 'pointer', color: INK,
-};
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<Ledger />);
