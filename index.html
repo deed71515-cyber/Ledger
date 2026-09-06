@@ -17,7 +17,7 @@
   html, body { margin: 0; padding: 0; background: #F6F3EC; }
   #root { min-height: 100vh; }
   .ledger-input:focus, .ledger-btn:focus { outline: 2px solid #B98A2E; outline-offset: 2px; }
-  .ledger-slider { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px; background: #E4DFD1; width: 100%; }
+  .ledger-slider { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px; background: #E4DFD1; width: 100%; touch-action: pan-y; }
   .ledger-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; cursor: pointer; }
   .ledger-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; border: none; cursor: pointer; }
 </style>
@@ -321,8 +321,8 @@ function Ledger() {
   const pageTitleStyle = { fontFamily: SERIF, fontSize: '1.5rem', fontWeight: 600, margin: '0 0 20px' };
 
   return (
-    <div style={{ background: PAPER, fontFamily: SANS, color: INK, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+    <div style={{ background: PAPER, fontFamily: SANS, color: INK, minHeight: '100vh' }}>
+      <div>
 
         {activeTab === 'home' && (
           <div style={pageStyle}>
@@ -542,7 +542,7 @@ function Ledger() {
         </div>
       )}
 
-      <nav style={{ display: 'flex', borderTop: `1px solid ${BORDER}`, background: CARD, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+      <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', borderTop: `1px solid ${BORDER}`, background: CARD, paddingBottom: 'env(safe-area-inset-bottom, 0px)', zIndex: 15 }}>
         {[
           { id: 'home', label: 'Home', Icon: IconHome },
           { id: 'budget', label: 'Budget', Icon: IconBudget },
