@@ -58,7 +58,7 @@
   }
 </script>
 
-<script type="text/babel" data-presets="react">
+<script type="text/plain" id="app-source">
 const { useState, useEffect, useCallback } = React;
 
 const STORAGE_KEY = 'ledger-state-v1';
@@ -404,6 +404,16 @@ function Ledger() {
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<Ledger />);
+</script>
+
+<script>
+  // Manually transform with the classic JSX runtime (avoids an ES module
+  // import that a plain script tag can't execute) and inject it.
+  var src = document.getElementById('app-source').textContent;
+  var output = Babel.transform(src, { presets: [['react', { runtime: 'classic' }]] }).code;
+  var s = document.createElement('script');
+  s.textContent = output;
+  document.body.appendChild(s);
 </script>
 </body>
 </html>
