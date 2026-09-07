@@ -167,6 +167,24 @@ function ProgressBar({ pct, color, height = 6 }) {
 }
 
 const inputStyle = { border: `1px solid ${BORDER}`, borderRadius: 6, padding: '8px', fontSize: '0.85rem', width: '100%' };
+
+function TypeToggle({ value, onChange, color }) {
+  const options = [{ v: 'expense', label: 'Expense' }, { v: 'income', label: 'Income' }];
+  return (
+    <div style={{ display: 'flex', border: `1px solid ${BORDER}`, borderRadius: 6, overflow: 'hidden' }}>
+      {options.map((opt) => (
+        <button key={opt.v} type="button" onClick={() => onChange(opt.v)}
+          style={{
+            flex: 1, padding: '7px 0', fontSize: '0.8rem', border: 'none', cursor: 'pointer',
+            background: value === opt.v ? color : 'transparent',
+            color: value === opt.v ? '#FFF' : MUTED,
+          }}>
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 const settingsBtnStyle = { textAlign: 'left', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, padding: '12px 16px', fontSize: '0.9rem', cursor: 'pointer', color: INK };
 
 function Ledger() {
@@ -184,6 +202,7 @@ function Ledger() {
   const [formNote, setFormNote] = useState('');
   const [formCategoryId, setFormCategoryId] = useState(null);
   const [formGoalId, setFormGoalId] = useState('');
+  const [formType, setFormType] = useState('expense'); // 'expense' | 'income'
 
   const [editingNameId, setEditingNameId] = useState(null);
   const [nameDraft, setNameDraft] = useState('');
@@ -334,11 +353,11 @@ function Ledger() {
     const tx = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       categoryId, amount: amt, note: formNote.trim(), date: new Date().toISOString(),
-      goalId: goalId || undefined,
+      goalId: goalId || undefined, type: formType,
     };
     const nextMonths = { ...withMonth, [activeMonth]: { ...withMonth[activeMonth], transactions: [tx, ...withMonth[activeMonth].transactions] } };
     setMonths(nextMonths); persist(income, categories, nextMonths);
-    setFormAmount(''); setFormNote(''); setOpenForm(null); setFormCategoryId(null); setFormGoalId('');
+    setFormAmount(''); setFormNote(''); setOpenForm(null); setFormCategoryId(null); setFormGoalId(''); setFormType('expense');
   }
 
   function addGoalContribution() {
@@ -410,11 +429,11 @@ function Ledger() {
     URL.revokeObjectURL(url);
   }
   function handleExportCSV() {
-    const rows = [['Month', 'Date', 'Category', 'Amount (GHC)', 'Note']];
+    const rows = [['Month', 'Date', 'Type', 'Category', 'Amount (GHC)', 'Note']];
     Object.keys(months).sort().forEach((mKey) => {
       (months[mKey]?.transactions || []).slice().reverse().forEach((t) => {
         const cat = categories.find((c) => c.id === t.categoryId);
-        rows.push([mKey, new Date(t.date).toLocaleDateString('en-GB'), cat?.name || 'Unknown', t.amount, `"${(t.note || '').replace(/"/g, '""')}"`]);
+        rows.push([mKey, new Date(t.date).toLocaleDateString('en-GB'), t.type === 'income' ? 'Income' : 'Expense', cat?.name || 'Unknown', t.amount, `"${(t.note || '').replace(/"/g, '""')}"`]);
       });
     });
     downloadBlob(rows.map((r) => r.join(',')).join('\n'), 'text/csv;charset=utf-8;', `ledger-export-${monthKey(new Date())}.csv`);
@@ -446,7 +465,11 @@ function Ledger() {
   const overAllocated = totalAllocatedPct > 100;
   const totalPlanned = income * (Math.min(totalAllocatedPct, 100) / 100);
   const unallocatedAmount = income - totalPlanned;
-  const totalSpent = currentTx.reduce((s, t) => s + t.amount, 0);
+  const totalSpent = currentTx.filter((t) => t.type !== 'income').reduce((s, t) => s + t.amount, 0);
+  const totalIncomeThisMonth = currentTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const totalIncomeAllTime = Object.values(months).reduce(
+    (sum, m) => sum + (m.transactions || []).filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0), 0
+  );
   const availableMonths = Array.from(new Set([...Object.keys(months), monthKey(new Date())])).sort();
   const monthIdx = availableMonths.indexOf(activeMonth);
   function goMonth(delta) { const idx = monthIdx + delta; if (idx >= 0 && idx < availableMonths.length) setActiveMonth(availableMonths[idx]); }
@@ -478,9 +501,12 @@ function Ledger() {
             <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 24, marginBottom: 20 }}>
               <p style={{ color: MUTED, fontSize: '0.85rem', margin: '0 0 4px' }}>Still unaccounted for this month</p>
               <p style={{ fontFamily: SERIF, fontSize: '2.5rem', fontWeight: 500, lineHeight: 1.1, color: unallocatedAmount < 0 ? BRICK : INK, margin: 0 }}>{formatGHS(unallocatedAmount)}</p>
-              <div style={{ display: 'flex', gap: 32, marginTop: 20, paddingTop: 20, borderTop: `1px solid ${BORDER}` }}>
+              <div style={{ display: 'flex', gap: 32, marginTop: 20, paddingTop: 20, borderTop: `1px solid ${BORDER}`, flexWrap: 'wrap', rowGap: 16 }}>
                 <div><p style={{ color: MUTED, fontSize: '0.8rem', margin: 0 }}>Planned</p><p style={{ fontFamily: SERIF, fontSize: '1.25rem', margin: 0 }}>{formatGHS(totalPlanned)}</p></div>
                 <div><p style={{ color: MUTED, fontSize: '0.8rem', margin: 0 }}>Spent so far</p><p style={{ fontFamily: SERIF, fontSize: '1.25rem', margin: 0 }}>{formatGHS(totalSpent)}</p></div>
+                {totalIncomeThisMonth > 0 && (
+                  <div><p style={{ color: MUTED, fontSize: '0.8rem', margin: 0 }}>Side income</p><p style={{ fontFamily: SERIF, fontSize: '1.25rem', margin: 0, color: GOLD }}>+{formatGHS(totalIncomeThisMonth)}</p></div>
+                )}
               </div>
               {overAllocated && <p style={{ color: BRICK, fontSize: '0.85rem', marginTop: 16, marginBottom: 0 }}>Your categories add up to {totalAllocatedPct}% — over 100%. Adjust in Budget.</p>}
             </div>
@@ -544,7 +570,9 @@ function Ledger() {
                           {t.note && <p style={{ color: MUTED, fontSize: '0.75rem', margin: 0 }}>{t.note}{t.recurringId ? ' · recurring' : ''}</p>}
                         </div>
                       </div>
-                      <span style={{ fontFamily: SERIF, fontSize: '0.9rem' }}>{formatGHS(t.amount)}</span>
+                      <span style={{ fontFamily: SERIF, fontSize: '0.9rem', color: t.type === 'income' ? GOLD : INK }}>
+                        {t.type === 'income' ? '+' : ''}{formatGHS(t.amount)}
+                      </span>
                     </div>
                   );
                 })}
@@ -569,10 +597,13 @@ function Ledger() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {categories.map((c) => {
                 const planned = income * (c.pct / 100);
-                const spent = currentTx.filter((t) => t.categoryId === c.id).reduce((s, t) => s + t.amount, 0);
-                const remaining = planned - spent;
-                const usedPct = planned > 0 ? Math.min(100, (spent / planned) * 100) : 0;
-                const isOver = spent > planned;
+                const catTx = currentTx.filter((t) => t.categoryId === c.id);
+                const spent = catTx.filter((t) => t.type !== 'income').reduce((s, t) => s + t.amount, 0);
+                const extraIncome = catTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+                const pool = planned + extraIncome;
+                const remaining = pool - spent;
+                const usedPct = pool > 0 ? Math.min(100, (spent / pool) * 100) : 0;
+                const isOver = spent > pool;
                 const isOpen = openForm === c.id;
                 const isEditingName = editingNameId === c.id;
                 const catGoals = c.goals || [];
@@ -592,20 +623,23 @@ function Ledger() {
                     </div>
                     <CustomSlider value={c.pct} min={0} max={40} color={c.color} onChange={(v) => handlePctChange(c.id, v)} />
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: '0.8rem' }}>
-                      <span style={{ color: MUTED }}>Planned {formatGHS(planned)}</span>
-                      <span style={{ color: isOver ? BRICK : MUTED }}>{isOver ? `Over by ${formatGHS(spent - planned)}` : `${formatGHS(remaining)} left`}</span>
+                      <span style={{ color: MUTED }}>
+                        Planned {formatGHS(planned)}{extraIncome > 0 ? ` + ${formatGHS(extraIncome)} income` : ''}
+                      </span>
+                      <span style={{ color: isOver ? BRICK : MUTED }}>{isOver ? `Over by ${formatGHS(spent - pool)}` : `${formatGHS(remaining)} left`}</span>
                     </div>
                     <ProgressBar pct={usedPct} color={isOver ? BRICK : c.color} />
 
                     <div style={{ marginTop: 12 }}>
                       {!isOpen ? (
-                        <button onClick={() => { setOpenForm(c.id); setFormAmount(''); setFormNote(''); setFormGoalId(''); }}
+                        <button onClick={() => { setOpenForm(c.id); setFormAmount(''); setFormNote(''); setFormGoalId(''); setFormType('expense'); }}
                           style={{ color: c.color, background: 'none', border: 'none', fontSize: '0.85rem', cursor: 'pointer', fontWeight: 500, padding: 0 }}>+ Add entry</button>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                          <TypeToggle value={formType} onChange={setFormType} color={c.color} />
                           <input type="number" placeholder="Amount" value={formAmount} onChange={(e) => setFormAmount(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(c.id, formGoalId || undefined); } }} autoFocus style={inputStyle} />
-                          <input type="text" placeholder="Note (optional)" value={formNote} onChange={(e) => setFormNote(e.target.value)}
+                          <input type="text" placeholder={formType === 'income' ? 'Source (e.g. Bug bounty)' : 'Note (optional)'} value={formNote} onChange={(e) => setFormNote(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(c.id, formGoalId || undefined); } }} style={inputStyle} />
                           {catGoals.length > 0 && (
                             <select value={formGoalId} onChange={(e) => setFormGoalId(e.target.value)} style={inputStyle}>
@@ -615,7 +649,7 @@ function Ledger() {
                           )}
                           <div style={{ display: 'flex', gap: 8 }}>
                             <button onClick={() => addTransaction(c.id, formGoalId || undefined)} style={{ background: c.color, color: '#FFF', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer' }}>Save</button>
-                            <button onClick={() => setOpenForm(null)} style={{ background: 'none', color: MUTED, border: 'none', fontSize: '0.85rem', cursor: 'pointer' }}>Cancel</button>
+                            <button onClick={() => { setOpenForm(null); setFormType('expense'); }} style={{ background: 'none', color: MUTED, border: 'none', fontSize: '0.85rem', cursor: 'pointer' }}>Cancel</button>
                           </div>
                         </div>
                       )}
@@ -746,7 +780,9 @@ function Ledger() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                        <span style={{ fontFamily: SERIF, fontSize: '0.9rem' }}>{formatGHS(t.amount)}</span>
+                        <span style={{ fontFamily: SERIF, fontSize: '0.9rem', color: t.type === 'income' ? GOLD : INK }}>
+                          {t.type === 'income' ? '+' : ''}{formatGHS(t.amount)}
+                        </span>
                         <button onClick={() => deleteTransaction(t.id)} style={{ color: MUTED, background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem' }}>×</button>
                       </div>
                     </div>
@@ -760,6 +796,12 @@ function Ledger() {
         {activeTab === 'settings' && (
           <div style={pageStyle}>
             <h1 style={pageTitleStyle}>Settings</h1>
+
+            <div style={{ marginBottom: 28, background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 20 }}>
+              <p style={{ color: MUTED, fontSize: '0.8rem', margin: '0 0 4px' }}>Side income, all time</p>
+              <p style={{ fontFamily: SERIF, fontSize: '1.8rem', fontWeight: 500, margin: 0, color: totalIncomeAllTime > 0 ? GOLD : INK }}>{formatGHS(totalIncomeAllTime)}</p>
+              <p style={{ color: MUTED, fontSize: '0.75rem', margin: '6px 0 0' }}>Every entry logged as "Income" across every month, added up.</p>
+            </div>
 
             <div style={{ marginBottom: 28 }}>
               <h2 style={{ fontFamily: SERIF, fontSize: '1rem', fontWeight: 600, marginBottom: 10 }}>Recurring costs</h2>
@@ -799,7 +841,7 @@ function Ledger() {
       </div>
 
       {activeTab === 'home' && (
-        <button onClick={() => { setOpenForm('quickadd'); setFormCategoryId(categories[0]?.id || null); setFormAmount(''); setFormNote(''); setFormGoalId(''); }}
+        <button onClick={() => { setOpenForm('quickadd'); setFormCategoryId(categories[0]?.id || null); setFormAmount(''); setFormNote(''); setFormGoalId(''); setFormType('expense'); }}
           style={{ position: 'fixed', bottom: 78, right: 20, width: 56, height: 56, borderRadius: '50%', background: FOREST, border: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(28,43,34,0.25)', cursor: 'pointer', zIndex: 10 }}
           aria-label="Add entry">
@@ -811,6 +853,7 @@ function Ledger() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(28,43,34,0.4)', display: 'flex', alignItems: 'flex-end', zIndex: 20 }} onClick={() => setOpenForm(null)}>
           <div style={{ background: CARD, width: '100%', borderRadius: '16px 16px 0 0', padding: 24 }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ fontFamily: SERIF, fontSize: '1.1rem', margin: '0 0 16px' }}>Add entry</h3>
+            <div style={{ marginBottom: 12 }}><TypeToggle value={formType} onChange={setFormType} color={FOREST} /></div>
             <label style={{ color: MUTED, fontSize: '0.8rem' }}>Category</label>
             <select value={formCategoryId || ''} onChange={(e) => { setFormCategoryId(e.target.value); setFormGoalId(''); }} style={{ ...inputStyle, margin: '4px 0 12px' }}>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -818,7 +861,7 @@ function Ledger() {
             <input type="number" placeholder="Amount" value={formAmount} onChange={(e) => setFormAmount(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(formCategoryId, formGoalId || undefined); } }} autoFocus
               style={{ ...inputStyle, padding: '10px', marginBottom: 10 }} />
-            <input type="text" placeholder="Note (optional)" value={formNote} onChange={(e) => setFormNote(e.target.value)}
+            <input type="text" placeholder={formType === 'income' ? 'Source (e.g. Bug bounty)' : 'Note (optional)'} value={formNote} onChange={(e) => setFormNote(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(formCategoryId, formGoalId || undefined); } }}
               style={{ ...inputStyle, padding: '10px', marginBottom: 10 }} />
             {(categories.find((c) => c.id === formCategoryId)?.goals || []).length > 0 && (
@@ -829,7 +872,7 @@ function Ledger() {
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
               <button onClick={() => addTransaction(formCategoryId, formGoalId || undefined)} style={{ flex: 1, background: FOREST, color: '#FFF', border: 'none', borderRadius: 8, padding: '12px', fontSize: '0.9rem', cursor: 'pointer' }}>Save</button>
-              <button onClick={() => setOpenForm(null)} style={{ flex: 1, background: 'none', color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 8, padding: '12px', fontSize: '0.9rem', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { setOpenForm(null); setFormType('expense'); }} style={{ flex: 1, background: 'none', color: MUTED, border: `1px solid ${BORDER}`, borderRadius: 8, padding: '12px', fontSize: '0.9rem', cursor: 'pointer' }}>Cancel</button>
             </div>
           </div>
         </div>
