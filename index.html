@@ -187,6 +187,14 @@ function TypeToggle({ value, onChange, color }) {
 }
 const settingsBtnStyle = { textAlign: 'left', background: CARD, border: `1px solid ${BORDER}`, borderRadius: 8, padding: '12px 16px', fontSize: '0.9rem', cursor: 'pointer', color: INK };
 
+function categoryLabel(t, categories) {
+  if (t.categoryId) {
+    const cat = categories.find((c) => c.id === t.categoryId);
+    return cat ? cat.name : 'Unknown';
+  }
+  return t.type === 'income' ? 'General income' : 'Unknown';
+}
+
 function Ledger() {
   const [loading, setLoading] = useState(true);
   const [saveError, setSaveError] = useState(false);
@@ -349,10 +357,13 @@ function Ledger() {
   function addTransaction(categoryId, goalId) {
     const amt = Number(formAmount);
     if (!amt || amt <= 0) return;
+    // Income with no goal tag is "general" — it boosts the month's total pool
+    // and gets split by category percentages automatically, so it carries no categoryId.
+    const effectiveCategoryId = (formType === 'income' && !goalId) ? null : categoryId;
     const withMonth = ensureMonth(activeMonth, months);
     const tx = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      categoryId, amount: amt, note: formNote.trim(), date: new Date().toISOString(),
+      categoryId: effectiveCategoryId, amount: amt, note: formNote.trim(), date: new Date().toISOString(),
       goalId: goalId || undefined, type: formType,
     };
     const nextMonths = { ...withMonth, [activeMonth]: { ...withMonth[activeMonth], transactions: [tx, ...withMonth[activeMonth].transactions] } };
@@ -433,7 +444,7 @@ function Ledger() {
     Object.keys(months).sort().forEach((mKey) => {
       (months[mKey]?.transactions || []).slice().reverse().forEach((t) => {
         const cat = categories.find((c) => c.id === t.categoryId);
-        rows.push([mKey, new Date(t.date).toLocaleDateString('en-GB'), t.type === 'income' ? 'Income' : 'Expense', cat?.name || 'Unknown', t.amount, `"${(t.note || '').replace(/"/g, '""')}"`]);
+        rows.push([mKey, new Date(t.date).toLocaleDateString('en-GB'), t.type === 'income' ? 'Income' : 'Expense', categoryLabel(t, categories), t.amount, `"${(t.note || '').replace(/"/g, '""')}"`]);
       });
     });
     downloadBlob(rows.map((r) => r.join(',')).join('\n'), 'text/csv;charset=utf-8;', `ledger-export-${monthKey(new Date())}.csv`);
@@ -463,8 +474,11 @@ function Ledger() {
   const currentTx = months[activeMonth]?.transactions || [];
   const totalAllocatedPct = categories.reduce((s, c) => s + c.pct, 0);
   const overAllocated = totalAllocatedPct > 100;
-  const totalPlanned = income * (Math.min(totalAllocatedPct, 100) / 100);
-  const unallocatedAmount = income - totalPlanned;
+  // General (untagged) income has no categoryId — it boosts the whole pool, split by percentage like salary.
+  const untaggedIncomeThisMonth = currentTx.filter((t) => t.type === 'income' && !t.categoryId).reduce((s, t) => s + t.amount, 0);
+  const effectiveMonthIncome = income + untaggedIncomeThisMonth;
+  const totalPlanned = effectiveMonthIncome * (Math.min(totalAllocatedPct, 100) / 100);
+  const unallocatedAmount = effectiveMonthIncome - totalPlanned;
   const totalSpent = currentTx.filter((t) => t.type !== 'income').reduce((s, t) => s + t.amount, 0);
   const totalIncomeThisMonth = currentTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const totalIncomeAllTime = Object.values(months).reduce(
@@ -566,7 +580,7 @@ function Ledger() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: cat?.color || MUTED, flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
-                          <p style={{ fontSize: '0.85rem', margin: 0 }}>{cat?.name || 'Unknown'}</p>
+                          <p style={{ fontSize: '0.85rem', margin: 0 }}>{categoryLabel(t, categories)}</p>
                           {t.note && <p style={{ color: MUTED, fontSize: '0.75rem', margin: 0 }}>{t.note}{t.recurringId ? ' · recurring' : ''}</p>}
                         </div>
                       </div>
@@ -596,11 +610,12 @@ function Ledger() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {categories.map((c) => {
-                const planned = income * (c.pct / 100);
+                const planned = effectiveMonthIncome * (c.pct / 100);
                 const catTx = currentTx.filter((t) => t.categoryId === c.id);
                 const spent = catTx.filter((t) => t.type !== 'income').reduce((s, t) => s + t.amount, 0);
-                const extraIncome = catTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-                const pool = planned + extraIncome;
+                // only goal-tagged income lands directly here — general income already boosted `planned` above
+                const directGoalIncome = catTx.filter((t) => t.type === 'income' && t.goalId).reduce((s, t) => s + t.amount, 0);
+                const pool = planned + directGoalIncome;
                 const remaining = pool - spent;
                 const usedPct = pool > 0 ? Math.min(100, (spent / pool) * 100) : 0;
                 const isOver = spent > pool;
@@ -624,7 +639,7 @@ function Ledger() {
                     <CustomSlider value={c.pct} min={0} max={40} color={c.color} onChange={(v) => handlePctChange(c.id, v)} />
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: '0.8rem' }}>
                       <span style={{ color: MUTED }}>
-                        Planned {formatGHS(planned)}{extraIncome > 0 ? ` + ${formatGHS(extraIncome)} income` : ''}
+                        Planned {formatGHS(planned)}{directGoalIncome > 0 ? ` + ${formatGHS(directGoalIncome)} toward goal` : ''}
                       </span>
                       <span style={{ color: isOver ? BRICK : MUTED }}>{isOver ? `Over by ${formatGHS(spent - pool)}` : `${formatGHS(remaining)} left`}</span>
                     </div>
@@ -643,7 +658,7 @@ function Ledger() {
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(c.id, formGoalId || undefined); } }} style={inputStyle} />
                           {catGoals.length > 0 && (
                             <select value={formGoalId} onChange={(e) => setFormGoalId(e.target.value)} style={inputStyle}>
-                              <option value="">Not toward a goal</option>
+                              <option value="">{formType === 'income' ? 'General income (splits across your budget)' : 'Not toward a goal'}</option>
                               {catGoals.map((g) => <option key={g.id} value={g.id}>Toward: {g.name}</option>)}
                             </select>
                           )}
@@ -774,7 +789,7 @@ function Ledger() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: cat?.color || MUTED, flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
-                          <p style={{ fontSize: '0.85rem', margin: 0 }}>{cat?.name || 'Unknown'}{t.recurringId ? ' · recurring' : ''}</p>
+                          <p style={{ fontSize: '0.85rem', margin: 0 }}>{categoryLabel(t, categories)}{t.recurringId ? ' · recurring' : ''}</p>
                           {t.note && <p style={{ color: MUTED, fontSize: '0.75rem', margin: 0 }}>{t.note}</p>}
                           <p style={{ color: MUTED, fontSize: '0.7rem', margin: 0 }}>{new Date(t.date).toLocaleDateString('en-GB')}</p>
                         </div>
@@ -854,17 +869,36 @@ function Ledger() {
           <div style={{ background: CARD, width: '100%', borderRadius: '16px 16px 0 0', padding: 24 }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ fontFamily: SERIF, fontSize: '1.1rem', margin: '0 0 16px' }}>Add entry</h3>
             <div style={{ marginBottom: 12 }}><TypeToggle value={formType} onChange={setFormType} color={FOREST} /></div>
-            <label style={{ color: MUTED, fontSize: '0.8rem' }}>Category</label>
-            <select value={formCategoryId || ''} onChange={(e) => { setFormCategoryId(e.target.value); setFormGoalId(''); }} style={{ ...inputStyle, margin: '4px 0 12px' }}>
-              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+
+            {formType === 'expense' ? (
+              <>
+                <label style={{ color: MUTED, fontSize: '0.8rem' }}>Category</label>
+                <select value={formCategoryId || ''} onChange={(e) => { setFormCategoryId(e.target.value); setFormGoalId(''); }} style={{ ...inputStyle, margin: '4px 0 12px' }}>
+                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </>
+            ) : (
+              <>
+                <label style={{ color: MUTED, fontSize: '0.8rem' }}>Send to a goal (optional)</label>
+                <select value={formGoalId} onChange={(e) => {
+                  const gid = e.target.value;
+                  setFormGoalId(gid);
+                  const g = allGoals.find((x) => x.id === gid);
+                  setFormCategoryId(g ? g.categoryId : null);
+                }} style={{ ...inputStyle, margin: '4px 0 12px' }}>
+                  <option value="">General income — splits across your budget</option>
+                  {allGoals.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.categoryName})</option>)}
+                </select>
+              </>
+            )}
+
             <input type="number" placeholder="Amount" value={formAmount} onChange={(e) => setFormAmount(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(formCategoryId, formGoalId || undefined); } }} autoFocus
               style={{ ...inputStyle, padding: '10px', marginBottom: 10 }} />
             <input type="text" placeholder={formType === 'income' ? 'Source (e.g. Bug bounty)' : 'Note (optional)'} value={formNote} onChange={(e) => setFormNote(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTransaction(formCategoryId, formGoalId || undefined); } }}
               style={{ ...inputStyle, padding: '10px', marginBottom: 10 }} />
-            {(categories.find((c) => c.id === formCategoryId)?.goals || []).length > 0 && (
+            {formType === 'expense' && (categories.find((c) => c.id === formCategoryId)?.goals || []).length > 0 && (
               <select value={formGoalId} onChange={(e) => setFormGoalId(e.target.value)} style={{ ...inputStyle, padding: '10px', marginBottom: 16 }}>
                 <option value="">Not toward a goal</option>
                 {(categories.find((c) => c.id === formCategoryId)?.goals || []).map((g) => <option key={g.id} value={g.id}>Toward: {g.name}</option>)}
