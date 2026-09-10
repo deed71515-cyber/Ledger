@@ -195,6 +195,15 @@ function categoryLabel(t, categories) {
   return t.type === 'income' ? 'Unplanned income' : 'Unknown';
 }
 
+// When the total pool (salary + unplanned income) changes size, shrink or grow every
+// category's percentage just enough to keep its dollar amount exactly the same as before —
+// this quietly frees up (or reclaims) real percentage room without moving any money on its own.
+function rescaleForPoolChange(cats, oldPool, newPool) {
+  if (!oldPool || oldPool <= 0 || !newPool || newPool <= 0) return cats;
+  const ratio = oldPool / newPool;
+  return cats.map((c) => ({ ...c, pct: c.pct * ratio }));
+}
+
 function Ledger() {
   const [loading, setLoading] = useState(true);
   const [saveError, setSaveError] = useState(false);
@@ -368,7 +377,21 @@ function Ledger() {
       goalId: goalId || undefined, type: formType,
     };
     const nextMonths = { ...withMonth, [activeMonth]: { ...withMonth[activeMonth], transactions: [tx, ...withMonth[activeMonth].transactions] } };
-    setMonths(nextMonths); persist(income, categories, nextMonths);
+
+    // Unplanned income grows the total pool — rescale category percentages so
+    // dollar amounts stay frozen, freeing real slider room instead of auto-absorbing.
+    let nextCategories = categories;
+    if (tx.type === 'income' && !tx.categoryId) {
+      const priorManualIncome = withMonth[activeMonth].transactions
+        .filter((t) => t.type === 'income' && !t.categoryId)
+        .reduce((s, t) => s + t.amount, 0);
+      const oldPool = income + priorManualIncome;
+      const newPool = oldPool + amt;
+      nextCategories = rescaleForPoolChange(categories, oldPool, newPool);
+      setCategories(nextCategories);
+    }
+
+    setMonths(nextMonths); persist(income, nextCategories, nextMonths);
     setFormAmount(''); setFormNote(''); setOpenForm(null); setFormCategoryId(null); setFormGoalId(''); setFormType('expense'); setFormIncomeDest('unplanned');
   }
 
@@ -407,8 +430,21 @@ function Ledger() {
 
   function deleteTransaction(txId) {
     const list = months[activeMonth]?.transactions || [];
+    const removed = list.find((t) => t.id === txId);
     const nextMonths = { ...months, [activeMonth]: { ...months[activeMonth], transactions: list.filter((t) => t.id !== txId) } };
-    setMonths(nextMonths); persist(income, categories, nextMonths);
+
+    let nextCategories = categories;
+    if (removed && removed.type === 'income' && !removed.categoryId) {
+      const manualIncomeIncludingThis = list
+        .filter((t) => t.type === 'income' && !t.categoryId)
+        .reduce((s, t) => s + t.amount, 0);
+      const oldPool = income + manualIncomeIncludingThis;
+      const newPool = oldPool - removed.amount;
+      nextCategories = rescaleForPoolChange(categories, oldPool, newPool);
+      setCategories(nextCategories);
+    }
+
+    setMonths(nextMonths); persist(income, nextCategories, nextMonths);
   }
 
   function addGoal(categoryId) {
@@ -494,11 +530,13 @@ function Ledger() {
   const currentTx = months[activeMonth]?.transactions || [];
   const totalAllocatedPct = categories.reduce((s, c) => s + c.pct, 0);
   const overAllocated = totalAllocatedPct > 100;
-  const totalPlanned = income * (Math.min(totalAllocatedPct, 100) / 100);
-  // Income with no categoryId is genuinely unplanned — it sits in "unaccounted"
-  // until you decide where it goes, rather than auto-splitting across categories.
+  // Unplanned income (no categoryId) grows the real total pool. Category percentages get
+  // rescaled the moment it's logged (see addTransaction), so this doesn't silently inflate
+  // any category's dollar amount — it just makes real slider room available to claim.
   const manualIncomeThisMonth = currentTx.filter((t) => t.type === 'income' && !t.categoryId).reduce((s, t) => s + t.amount, 0);
-  const unallocatedAmount = (income - totalPlanned) + manualIncomeThisMonth;
+  const totalPool = income + manualIncomeThisMonth;
+  const totalPlanned = totalPool * (Math.min(totalAllocatedPct, 100) / 100);
+  const unallocatedAmount = totalPool - totalPlanned;
   const totalSpent = currentTx.filter((t) => t.type !== 'income').reduce((s, t) => s + t.amount, 0);
   const totalIncomeThisMonth = currentTx.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const totalIncomeAllTime = Object.values(months).reduce(
@@ -630,7 +668,7 @@ function Ledger() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {categories.map((c) => {
-                const planned = income * (c.pct / 100);
+                const planned = totalPool * (c.pct / 100);
                 const catTx = currentTx.filter((t) => t.categoryId === c.id);
                 const spent = catTx.filter((t) => t.type !== 'income').reduce((s, t) => s + t.amount, 0);
                 // any income explicitly tagged to this category (direct, or via a goal within it) boosts its pool
@@ -654,7 +692,7 @@ function Ledger() {
                       ) : (
                         <span onClick={() => startRename(c)} style={{ fontWeight: 600, fontSize: '0.95rem', cursor: 'pointer', borderBottom: `1px dashed ${BORDER}` }}>{c.name}</span>
                       )}
-                      <span style={{ color: MUTED, fontSize: '0.85rem' }}>{c.pct}%</span>
+                      <span style={{ color: MUTED, fontSize: '0.85rem' }}>{Math.round(c.pct)}%</span>
                     </div>
                     <CustomSlider value={c.pct} min={0} max={40} color={c.color} onChange={(v) => handlePctChange(c.id, v)} />
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: '0.8rem' }}>
